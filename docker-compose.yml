@@ -6,7 +6,9 @@ services:
     env_file: .env
     volumes:
       - ./music-cache:/app/music-cache
-      - /home/ubuntu/.config/rclone:/home/node/.config/rclone:ro
+      # rw de propósito: o rclone reescreve o token OAuth renovado neste arquivo.
+      # Montado :ro ele funciona até o token rotacionar e então falha calado.
+      - /home/ubuntu/.config/rclone:/home/node/.config/rclone
       - /home/ubuntu/projects/kairos-api/cookies:/app/cookies:ro
     networks:
       - data
