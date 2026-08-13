@@ -40,15 +40,26 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
         python3 \
-        rclone \
         ca-certificates \
         curl \
+        unzip \
     && curl -L -o /usr/local/bin/yt-dlp \
         https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64 \
     && chmod +x /usr/local/bin/yt-dlp \
-    && apt-get purge -y curl \
+    # rclone oficial em vez do pacote do bookworm (v1.60, de 2022): a config deste
+    # host é escrita por uma versão bem mais nova e o formato do token precisa bater.
+    && curl -L -o /tmp/rclone.zip https://downloads.rclone.org/rclone-current-linux-arm64.zip \
+    && unzip -j -q /tmp/rclone.zip '*/rclone' -d /usr/local/bin/ \
+    && chmod +x /usr/local/bin/rclone \
+    && rm /tmp/rclone.zip \
+    && apt-get purge -y curl unzip \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
+
+# O usuário ubuntu desta VM é uid 1001, não 1000. Sem alinhar, o container não lê
+# o rclone.conf (600) montado do host — e afrouxar a permissão de um credencial
+# seria a correção errada.
+RUN usermod -u 1001 node && groupmod -g 1001 node
 
 WORKDIR /app
 
