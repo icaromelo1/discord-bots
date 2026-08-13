@@ -1,0 +1,16 @@
+services:
+  discord-dj:
+    build: .
+    container_name: discord-dj
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./music-cache:/app/music-cache
+      - /home/ubuntu/.config/rclone:/home/node/.config/rclone:ro
+      - /home/ubuntu/projects/kairos-api/cookies:/app/cookies:ro
+    networks:
+      - data
+
+networks:
+  data:
+    external: true
