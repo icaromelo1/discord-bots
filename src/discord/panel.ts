@@ -2,12 +2,12 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, type Messag
 import type { PlayerController, PlayerState } from '../player/controller'
 import type { QueueItem } from '../queue/queue'
 
+// sem botão de volume: cada pessoa ajusta o volume do bot no próprio Discord
+// (botão direito no bot → Volume do Usuário), que é por ouvinte e não afeta os outros
 export const PANEL_BUTTON_IDS = {
   playPause: 'dj:playpause',
   skip: 'dj:skip',
   stop: 'dj:stop',
-  volumeDown: 'dj:voldown',
-  volumeUp: 'dj:volup',
 } as const
 
 const EMBED_COLOR = 0x5865f2
@@ -114,23 +114,7 @@ export function buildPanel(state: PlayerState): {
     .setLabel('Parar')
     .setDisabled(nothingPlaying)
 
-  const volumeDownButton = new ButtonBuilder()
-    .setCustomId(PANEL_BUTTON_IDS.volumeDown)
-    .setStyle(ButtonStyle.Secondary)
-    .setEmoji('🔉')
-
-  const volumeUpButton = new ButtonBuilder()
-    .setCustomId(PANEL_BUTTON_IDS.volumeUp)
-    .setStyle(ButtonStyle.Secondary)
-    .setEmoji('🔊')
-
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    playPauseButton,
-    skipButton,
-    stopButton,
-    volumeDownButton,
-    volumeUpButton,
-  )
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(playPauseButton, skipButton, stopButton)
 
   return { embeds: [embed], components: [row] }
 }

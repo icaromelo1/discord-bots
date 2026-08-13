@@ -40,10 +40,6 @@ async function handleButton(interaction: ButtonInteraction, controller: PlayerCo
     case PANEL_BUTTON_IDS.stop:
       controller.stop(guildId)
       break
-    case PANEL_BUTTON_IDS.volumeDown:
-    case PANEL_BUTTON_IDS.volumeUp:
-      // TODO: controller ainda não tem controle de volume — implementar quando existir
-      break
     default:
       break
   }

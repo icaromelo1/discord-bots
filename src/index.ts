@@ -4,6 +4,7 @@ import { config } from './config'
 import { AppDataSource } from './db/data-source'
 import { createClient, installGuildGuard } from './discord/client'
 import { commandData } from './discord/commands'
+import { installEmptyChannelWatch } from './discord/empty-channel-watch'
 import { registerInteractionHandlers } from './discord/interactions'
 import { PanelManager } from './discord/panel'
 import { registerCommands } from './discord/register-commands'
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
   const client = createClient()
   installGuildGuard(client)
   registerInteractionHandlers(client, controller, panelManager)
+  installEmptyChannelWatch(client, controller)
 
   client.once(Events.ClientReady, (ready) => {
     console.log(`[discord-dj] conectado como ${ready.user.tag} em ${ready.guilds.cache.size} servidor(es)`)

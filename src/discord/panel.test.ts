@@ -48,6 +48,14 @@ describe('buildPanel — estado vazio', () => {
     expect(findButton(components, PANEL_BUTTON_IDS.skip).data.disabled).toBe(true)
     expect(findButton(components, PANEL_BUTTON_IDS.stop).data.disabled).toBe(true)
   })
+
+  it('não expõe botão de volume — cada ouvinte ajusta pelo próprio Discord', () => {
+    const { components } = buildPanel(makeState())
+    const ids = components[0].components.map((b) => b.data.custom_id)
+
+    expect(ids).toEqual(['dj:playpause', 'dj:skip', 'dj:stop'])
+    expect(ids.some((id) => id?.includes('vol'))).toBe(false)
+  })
 })
 
 describe('buildPanel — faixa tocando', () => {
