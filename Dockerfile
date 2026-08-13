@@ -48,6 +48,13 @@ RUN apt-get update \
     && chmod +x /usr/local/bin/yt-dlp \
     # rclone oficial em vez do pacote do bookworm (v1.60, de 2022): a config deste
     # host é escrita por uma versão bem mais nova e o formato do token precisa bater.
+    # deno: o yt-dlp precisa de um runtime JS para resolver a assinatura dos vídeos
+    # do YouTube. Sem ele só sobram formatos de imagem e todo download falha com
+    # "Requested format is not available".
+    && curl -L -o /tmp/deno.zip https://github.com/denoland/deno/releases/latest/download/deno-aarch64-unknown-linux-gnu.zip \
+    && unzip -j -q /tmp/deno.zip -d /usr/local/bin/ \
+    && chmod +x /usr/local/bin/deno \
+    && rm /tmp/deno.zip \
     && curl -L -o /tmp/rclone.zip https://downloads.rclone.org/rclone-current-linux-arm64.zip \
     && unzip -j -q /tmp/rclone.zip '*/rclone' -d /usr/local/bin/ \
     && chmod +x /usr/local/bin/rclone \

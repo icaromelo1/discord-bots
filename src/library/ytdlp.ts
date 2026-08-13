@@ -58,18 +58,34 @@ function formatDuration(durationSec: number): string {
   return `${minutes}min`
 }
 
-function cookieArgs(): string[] {
-  const cookiesFile = config.library.cookiesFile
-  if (!cookiesFile) return []
+// O yt-dlp REESCREVE o arquivo de cookies ao terminar. O arquivo de origem é
+// compartilhado com outro serviço e montado read-only, então trabalhamos sobre uma
+// cópia descartável: sem isso o yt-dlp aborta com "Read-only file system" depois de
+// já ter baixado, e escrever no original faria dois serviços disputarem o mesmo
+// credencial.
+function prepareCookies(): string | null {
+  const source = config.library.cookiesFile
+  if (!source) return null
 
   try {
-    const stats = fs.statSync(cookiesFile)
-    if (stats.size === 0) return []
+    if (fs.statSync(source).size === 0) return null
   } catch {
-    return []
+    return null
   }
 
-  return ['--cookies', cookiesFile]
+  const runtimeCopy = path.join(config.library.cacheDir, '.cookies-runtime.txt')
+  try {
+    fs.mkdirSync(path.dirname(runtimeCopy), { recursive: true })
+    fs.copyFileSync(source, runtimeCopy)
+    return runtimeCopy
+  } catch {
+    return null
+  }
+}
+
+function cookieArgs(): string[] {
+  const cookiesFile = prepareCookies()
+  return cookiesFile ? ['--cookies', cookiesFile] : []
 }
 
 function potArgs(): string[] {
@@ -85,6 +101,10 @@ function potArgs(): string[] {
 }
 
 export function translateError(message: string): YtDlpError {
+  // o stderr bruto do yt-dlp só existe aqui; sem registrar, toda falha vira a
+  // mensagem amigável e não há como diagnosticar pelo log do container
+  console.error('[discord-dj] yt-dlp falhou:', message.slice(0, 2000))
+
   if (/Sign in to confirm/i.test(message)) {
     return new YtDlpError(
       'O YouTube bloqueou o download deste servidor. Os cookies precisam ser renovados.',
