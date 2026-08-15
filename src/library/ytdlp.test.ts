@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractYoutubeId, translateError, YtDlpError } from './ytdlp'
+import { extractYoutubeId, extractPlaylistId, translateError, YtDlpError } from './ytdlp'
 
 describe('extractYoutubeId', () => {
   it('aceita um id cru de 11 caracteres', () => {
@@ -69,6 +69,42 @@ describe('extractYoutubeId', () => {
   })
 })
 
+describe('extractPlaylistId', () => {
+  it('extrai o id de uma url watch?v= com list=', () => {
+    expect(extractPlaylistId('https://www.youtube.com/watch?v=abc12345678&list=PLxxxx')).toBe('PLxxxx')
+  })
+
+  it('extrai o id de uma url playlist?list=', () => {
+    expect(extractPlaylistId('https://www.youtube.com/playlist?list=PLxxxx')).toBe('PLxxxx')
+  })
+
+  it('devolve null para list=RD (rádio automático do YouTube)', () => {
+    expect(extractPlaylistId('https://www.youtube.com/watch?v=abc12345678&list=RDxxxx')).toBeNull()
+  })
+
+  it('devolve null quando a url não tem list=', () => {
+    expect(extractPlaylistId('https://www.youtube.com/watch?v=abc12345678')).toBeNull()
+  })
+
+  it('devolve null para string vazia', () => {
+    expect(extractPlaylistId('')).toBeNull()
+  })
+
+  it('devolve null para texto solto', () => {
+    expect(extractPlaylistId('minha musica favorita')).toBeNull()
+  })
+
+  it('devolve null para url de outro site', () => {
+    expect(extractPlaylistId('https://vimeo.com/playlist?list=PLxxxx')).toBeNull()
+  })
+
+  it('extrai o id quando list= está no meio de outros parâmetros', () => {
+    expect(
+      extractPlaylistId('https://www.youtube.com/watch?v=abc12345678&foo=bar&list=PLxxxx&baz=1'),
+    ).toBe('PLxxxx')
+  })
+})
+
 describe('translateError', () => {
   it('mapeia mensagem de bloqueio anti-bot para kind anti-bot', () => {
     const error = translateError('ERROR: Sign in to confirm you are not a bot')
@@ -129,5 +165,15 @@ describe('translateError', () => {
       expect(error.message).not.toContain(stderr)
       expect(stderr).not.toContain(error.message)
     }
+  })
+})
+
+describe('extractPlaylistId — link colado sem esquema', () => {
+  it('aceita URL sem https://, como o extractYoutubeId já aceita', () => {
+    expect(extractPlaylistId('youtube.com/watch?v=dQw4w9WgXcQ&list=PLabcdef')).toBe('PLabcdef')
+  })
+
+  it('continua rejeitando texto solto que não é URL', () => {
+    expect(extractPlaylistId('summertime list=PL123')).toBeNull()
   })
 })

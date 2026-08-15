@@ -48,6 +48,30 @@ export function extractYoutubeId(input: string): string {
   throw new YtDlpError('Link do YouTube inválido.', 'link-invalido')
 }
 
+export function extractPlaylistId(input: string): string | null {
+  const trimmed = input.trim()
+
+  let url: URL
+  try {
+    // extractYoutubeId aceita link sem esquema (usa regex); sem isto, colar
+    // "youtube.com/watch?v=x&list=PL..." cairia calado no caminho de faixa única
+    url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`)
+  } catch {
+    return null
+  }
+
+  if (!/(^|\.)youtube\.com$|(^|\.)youtu\.be$/.test(url.hostname)) return null
+
+  const listId = url.searchParams.get('list')
+  if (!listId) return null
+
+  // list=RD... é o mix/rádio automático do YouTube — uma lista infinita gerada por
+  // eles, não uma playlist de verdade; o bot trata esse caso como faixa única
+  if (listId.startsWith('RD')) return null
+
+  return listId
+}
+
 function formatDuration(durationSec: number): string {
   const hours = Math.floor(durationSec / 3600)
   const minutes = Math.floor((durationSec % 3600) / 60)
@@ -177,6 +201,45 @@ export async function searchYoutube(termo: string, limite = 5): Promise<SearchRe
       durationSec: Math.floor(entry.duration ?? 0),
     }))
     .slice(0, limite)
+}
+
+export interface PlaylistInfo {
+  titulo: string
+  entradas: { youtubeId: string; title: string; durationSec: number }[]
+}
+
+export async function listPlaylist(url: string): Promise<PlaylistInfo> {
+  const args = ['-J', '--flat-playlist', '--no-warnings', ...cookieArgs(), ...potArgs(), url]
+
+  let stdout: string
+  try {
+    const result = await execFile('yt-dlp', args, EXEC_OPTIONS)
+    stdout = result.stdout
+  } catch (error) {
+    const stderr =
+      error instanceof Error && 'stderr' in error ? String((error as { stderr: unknown }).stderr) : String(error)
+    throw translateError(stderr)
+  }
+
+  const data = JSON.parse(stdout) as {
+    title?: string
+    entries?: { id?: string; title?: string; duration?: number; live_status?: string }[]
+  }
+
+  const entradas = (data.entries ?? [])
+    .filter((entry) => entry.id && YOUTUBE_ID_REGEX.test(entry.id) && entry.title)
+    .filter((entry) => entry.live_status !== 'is_live')
+    .filter((entry) => !entry.duration || entry.duration <= config.ytdlp.maxDurationSec)
+    .map((entry) => ({
+      youtubeId: entry.id as string,
+      title: entry.title as string,
+      durationSec: Math.floor(entry.duration ?? 0),
+    }))
+
+  return {
+    titulo: data.title ?? '',
+    entradas,
+  }
 }
 
 export async function fetchInfo(youtubeId: string): Promise<YtDlpInfo> {
