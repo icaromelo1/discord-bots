@@ -114,6 +114,19 @@ export class SessaoLive {
     }
   }
 
+  private bufferUsuario = ''
+  private bufferBot = ''
+
+  /** Emite o que foi acumulado no turno e zera os buffers. */
+  private fecharTurno(): void {
+    const usuario = this.bufferUsuario.trim()
+    const bot = this.bufferBot.trim()
+    this.bufferUsuario = ''
+    this.bufferBot = ''
+    if (usuario) this.opcoes.onTranscricao('usuario', usuario)
+    if (bot) this.opcoes.onTranscricao('bot', bot)
+  }
+
   private tratarMensagem(mensagem: LiveServerMessage): void {
     if (mensagem.toolCall?.functionCalls?.length) {
       void this.tratarChamadaDeFerramenta(mensagem.toolCall.functionCalls)
@@ -129,11 +142,16 @@ export class SessaoLive {
       if (dados) this.opcoes.onAudio(Buffer.from(dados, 'base64'))
     }
 
+    // A Live API entrega a transcrição em PEDAÇOS ("Co" / "mo é" / " que" / " você").
+    // Salvar cada pedaço como uma fala transformava uma frase em onze linhas — por isso
+    // acumulamos e só emitimos quando o turno fecha.
     const transcricaoUsuario = conteudo.inputTranscription?.text
-    if (transcricaoUsuario) this.opcoes.onTranscricao('usuario', transcricaoUsuario)
+    if (transcricaoUsuario) this.bufferUsuario += transcricaoUsuario
 
     const transcricaoBot = conteudo.outputTranscription?.text
-    if (transcricaoBot) this.opcoes.onTranscricao('bot', transcricaoBot)
+    if (transcricaoBot) this.bufferBot += transcricaoBot
+
+    if (conteudo.turnComplete || conteudo.generationComplete) this.fecharTurno()
   }
 
   private async tratarChamadaDeFerramenta(
@@ -186,6 +204,8 @@ export class SessaoLive {
   }
 
   async fechar(motivo: string): Promise<void> {
+    // sem isto, a última frase de um turno interrompido some
+    this.fecharTurno()
     if (this.estadoAtual === 'fechada') return
 
     this.estadoAtual = 'fechada'

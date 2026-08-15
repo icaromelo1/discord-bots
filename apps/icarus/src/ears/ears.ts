@@ -65,7 +65,10 @@ export class Ears {
       if (streams.has(userId)) return
 
       const opusStream = connection.receiver.subscribe(userId, {
-        end: { behavior: EndBehaviorType.AfterSilence, duration: 800 },
+        // 800ms partia frase no meio de qualquer pausa para respirar: quem fala
+        // "Ícaro... quem é você?" virava dois trechos, e o nome ficava sozinho num
+        // pedaço curto que a porta de energia descartava
+        end: { behavior: EndBehaviorType.AfterSilence, duration: 1400 },
       })
       const decoder = new prism.opus.Decoder({
         rate: DISCORD_SAMPLE_RATE,
