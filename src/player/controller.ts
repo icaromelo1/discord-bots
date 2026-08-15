@@ -1,5 +1,5 @@
 import type { VoiceBasedChannel } from 'discord.js'
-import { ensureLocalFile, markPlayed, type ResolvedTrack } from '../library/library'
+import { ensureLocalFile, markPlayed, resolveTrack, type ResolvedTrack } from '../library/library'
 import { QueueManager, type QueueItem } from '../queue/queue'
 import { VoiceManager } from '../voice/voice'
 
@@ -13,6 +13,7 @@ export interface PlayerState {
 
 export class PlayerController {
   private readonly listeners: ((guildId: string) => void)[] = []
+  private readonly prefetches = new Map<string, { cancelado: boolean }>()
 
   constructor(
     private readonly voice: VoiceManager,
@@ -20,6 +21,7 @@ export class PlayerController {
   ) {
     this.voice.onIdle((guildId) => void this.advance(guildId))
     this.voice.onDisconnect((guildId) => {
+      this.cancelPrefetch(guildId)
       this.queue.clear(guildId)
       this.emit(guildId)
     })
@@ -42,6 +44,7 @@ export class PlayerController {
     const guildId = channel.guildId
     const item: QueueItem = {
       trackId: track.id,
+      driveFile: track.driveFile,
       youtubeId: track.youtubeId,
       title: track.title,
       durationSec: track.durationSec,
@@ -61,6 +64,31 @@ export class PlayerController {
     return { started: true }
   }
 
+  // Playlist: os itens entram sem arquivo baixado. Só a primeira é resolvida agora;
+  // as demais vão sendo buscadas uma de cada vez pelo prefetch.
+  async enqueueMany(
+    channel: VoiceBasedChannel,
+    itens: QueueItem[],
+    ): Promise<{ adicionadas: number; cortadas: number; started: boolean }> {
+    const guildId = channel.guildId
+    const resultado = this.queue.addMany(guildId, itens)
+
+    if (resultado.adicionadas === 0) {
+      return { ...resultado, started: false }
+    }
+
+    this.voice.ensure(channel)
+
+    if (this.queue.current(guildId)) {
+      this.emit(guildId)
+      this.prefetchNext(guildId)
+      return { ...resultado, started: false }
+    }
+
+    await this.advance(guildId)
+    return { ...resultado, started: true }
+  }
+
   // puxa o próximo da fila e toca. Chamado tanto pelo enqueue (fila parada) quanto
   // pelo onIdle da camada de voz (faixa anterior terminou sozinha).
   private async advance(guildId: string): Promise<void> {
@@ -71,21 +99,70 @@ export class PlayerController {
     }
 
     try {
-      const filePath = await ensureLocalFile({
-        id: next.trackId,
-        youtubeId: next.youtubeId,
-        title: next.title,
-        durationSec: next.durationSec,
-        driveFile: `${next.youtubeId}.mp3`,
-      })
+      const filePath = await this.resolverItem(guildId, next)
       this.voice.play(guildId, filePath)
       await markPlayed(guildId, next.trackId)
       this.emit(guildId)
+      // só depois de a faixa atual estar tocando é que a próxima começa a baixar:
+      // é isto que mantém o lookahead em exatamente uma
+      this.prefetchNext(guildId)
     } catch (error) {
       console.error(`[discord-dj] falha ao tocar ${next.youtubeId} na guild ${guildId}:`, error)
       // uma faixa quebrada não pode travar a fila inteira
       await this.advance(guildId)
     }
+  }
+
+  // Item vindo de playlist chega sem trackId: precisa passar pelo resolveTrack agora.
+  // Item já resolvido só precisa do arquivo quente no cache.
+  private async resolverItem(guildId: string, item: QueueItem): Promise<string> {
+    if (item.trackId && item.driveFile) {
+      return ensureLocalFile({
+        id: item.trackId,
+        youtubeId: item.youtubeId,
+        title: item.title,
+        durationSec: item.durationSec,
+        driveFile: item.driveFile,
+      })
+    }
+
+    const track = await resolveTrack(guildId, item.youtubeId, item.addedBy, item.addedByName)
+    item.trackId = track.id
+    item.driveFile = track.driveFile
+    this.queue.markResolved(guildId, item.youtubeId, track.id, track.driveFile)
+    return ensureLocalFile(track)
+  }
+
+  prefetchNext(guildId: string): void {
+    if (this.prefetches.has(guildId)) return
+
+    const alvo = this.queue.firstUnresolved(guildId)
+    if (!alvo) return
+
+    const controle = { cancelado: false }
+    this.prefetches.set(guildId, controle)
+
+    void resolveTrack(guildId, alvo.item.youtubeId, alvo.item.addedBy, alvo.item.addedByName)
+      .then((track) => {
+        if (controle.cancelado) return
+        this.queue.markResolved(guildId, alvo.item.youtubeId, track.id, track.driveFile)
+      })
+      .catch((error) => {
+        // falha aqui é silenciosa pro chat: a faixa é tentada de novo na vez dela
+        console.error(`[discord-dj] prefetch de ${alvo.item.youtubeId} falhou:`, error)
+      })
+      .finally(() => {
+        if (this.prefetches.get(guildId) === controle) this.prefetches.delete(guildId)
+      })
+  }
+
+  cancelPrefetch(guildId: string): void {
+    const controle = this.prefetches.get(guildId)
+    if (!controle) return
+    // o download em curso não é abortável, mas o resultado é descartado; o arquivo
+    // que já baixou fica no cache e não é desperdício — a faixa segue na biblioteca
+    controle.cancelado = true
+    this.prefetches.delete(guildId)
   }
 
   async skip(guildId: string): Promise<void> {
@@ -111,12 +188,14 @@ export class PlayerController {
   }
 
   stop(guildId: string): void {
+    this.cancelPrefetch(guildId)
     this.queue.clear(guildId)
     this.voice.stop(guildId)
     this.emit(guildId)
   }
 
   leave(guildId: string): void {
+    this.cancelPrefetch(guildId)
     this.queue.clear(guildId)
     this.voice.leave(guildId)
     this.emit(guildId)
