@@ -43,6 +43,14 @@ export class Conversa {
     private readonly avisar: (guildId: string, texto: string) => void,
   ) {
     this.ears.onFala((trecho) => void this.aoOuvirFala(trecho))
+    // se for expulso ou a conexão cair, os ouvidos precisam parar junto — senão fica
+    // stream aberto para uma call que não existe mais
+    this.voice.onDisconnect((guildId) => {
+      if (this.atual?.guildId !== guildId) return
+      this.ears.parar(guildId)
+      this.atual = null
+      void this.encerrarSessao('conexao-perdida')
+    })
     this.mouth.onComecouAFalar((guildId) => void this.ducking.abaixar(guildId))
     this.mouth.onParouDeFalar((guildId) => void this.ducking.restaurar(guildId))
   }
@@ -53,6 +61,9 @@ export class Conversa {
 
   entrar(channel: VoiceBasedChannel, nomes: Map<string, string>): void {
     const connection = this.voice.ensure(channel)
+    // sem isto ele sai da call 2 min depois de entrar: o temporizador de ociosidade da
+    // camada compartilhada existe para o bot de música, e escutar não conta como tocar
+    this.voice.manterConectado(channel.guildId, true)
     this.ears.escutar(connection, channel.guildId)
     this.atual = { guildId: channel.guildId, channelId: channel.id }
     this.nomes.clear()
@@ -61,6 +72,7 @@ export class Conversa {
 
   async sair(guildId: string): Promise<void> {
     await this.encerrarSessao('saiu-da-call')
+    this.voice.manterConectado(guildId, false)
     this.ears.parar(guildId)
     this.voice.leave(guildId)
     this.atual = null

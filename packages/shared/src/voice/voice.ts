@@ -22,12 +22,16 @@ interface GuildVoiceState {
   subscription: PlayerSubscription | undefined
   idleTimer: NodeJS.Timeout | null
   resource: AudioResource | null
+  /** Quando true, o bot não sai da call por ociosidade. */
+  manter: boolean
 }
 
 export class VoiceManager {
   private readonly states = new Map<string, GuildVoiceState>()
-  private idleHandler: ((guildId: string) => void) | null = null
-  private disconnectHandler: ((guildId: string) => void) | null = null
+  // listas e não handler único: o DJ registra o PlayerController, e o Icarus precisa
+  // registrar também a limpeza dos ouvidos. Com um campo só, o segundo apagava o primeiro.
+  private readonly idleHandlers: ((guildId: string) => void)[] = []
+  private readonly disconnectHandlers: ((guildId: string) => void)[] = []
 
   ensure(channel: VoiceBasedChannel): VoiceConnection {
     const existing = this.states.get(channel.guildId)
@@ -50,7 +54,7 @@ export class VoiceManager {
         ])
       } catch {
         this.destroyGuildState(channel.guildId)
-        this.disconnectHandler?.(channel.guildId)
+        for (const handler of this.disconnectHandlers) handler(channel.guildId)
       }
     })
 
@@ -63,6 +67,7 @@ export class VoiceManager {
       player,
       subscription: connection.subscribe(player),
       idleTimer: null,
+      manter: false,
       resource: null,
     }
 
@@ -140,17 +145,32 @@ export class VoiceManager {
   }
 
   onIdle(handler: (guildId: string) => void): void {
-    this.idleHandler = handler
+    this.idleHandlers.push(handler)
   }
 
   onDisconnect(handler: (guildId: string) => void): void {
-    this.disconnectHandler = handler
+    this.disconnectHandlers.push(handler)
+  }
+
+  /**
+   * Impede a saída automática por ociosidade naquela guild.
+   *
+   * O temporizador existe para o bot de música não ficar pendurado numa call depois que
+   * a fila acaba. Para um bot que está ali para ESCUTAR, "nada tocando" é o estado
+   * normal — sem isto ele sai sozinho dois minutos depois de entrar.
+   */
+  manterConectado(guildId: string, manter: boolean): void {
+    const state = this.states.get(guildId)
+    if (!state) return
+    state.manter = manter
+    if (manter) this.clearIdleTimer(state)
+    else this.startIdleTimer(guildId, state)
   }
 
   private attachPlayerListeners(guildId: string, state: GuildVoiceState): void {
     state.player.on(AudioPlayerStatus.Idle, (oldState) => {
       if (oldState.status !== AudioPlayerStatus.Playing) return
-      this.idleHandler?.(guildId)
+      for (const handler of this.idleHandlers) handler(guildId)
       // o handler normalmente já mandou a próxima faixa tocar; só armar a saída
       // por ociosidade se nada tiver começado, senão o bot abandona a call no
       // meio da música seguinte
@@ -162,6 +182,7 @@ export class VoiceManager {
 
   private startIdleTimer(guildId: string, state: GuildVoiceState): void {
     this.clearIdleTimer(state)
+    if (state.manter) return
     state.idleTimer = setTimeout(() => {
       this.leave(guildId)
     }, getSharedConfig().player.idleTimeoutMs)
