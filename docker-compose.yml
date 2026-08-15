@@ -1,14 +1,21 @@
 services:
-  discord-dj:
-    build: .
+  dj:
+    build:
+      # contexto é a raiz do monorepo: o build precisa dos manifestos do workspace
+      # e de packages/shared, que vivem fora de apps/dj
+      context: .
+      dockerfile: apps/dj/Dockerfile
+    image: discord-bots-dj:latest
     container_name: discord-dj
     restart: unless-stopped
-    env_file: .env
+    env_file: apps/dj/.env
     volumes:
-      - ./music-cache:/app/music-cache
+      - ./apps/dj/music-cache:/app/music-cache
       # rw de propósito: o rclone reescreve o token OAuth renovado neste arquivo.
       # Montado :ro ele funciona até o token rotacionar e então falha calado.
       - /home/ubuntu/.config/rclone:/home/node/.config/rclone
+      # DIRETÓRIO, nunca o arquivo: bind-mount de arquivo único quebra quando o cron
+      # de cookies reescreve e troca o inode
       - /home/ubuntu/projects/kairos-api/cookies:/app/cookies:ro
     networks:
       - data
