@@ -1,5 +1,19 @@
 # syntax=docker/dockerfile:1
 
+# Estágio próprio para o whisper.cpp: compilar leva minutos em ARM e o resultado é
+# só um binário + um modelo. Separado, o cache do Docker evita recompilar a cada
+# mudança de código do bot.
+FROM debian:bookworm-slim AS whisper
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git build-essential cmake ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt
+RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp
+WORKDIR /opt/whisper.cpp
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j"$(nproc)" --config Release
+ARG WHISPER_MODEL=base
+RUN bash ./models/download-ggml-model.sh ${WHISPER_MODEL}
+
 # node:22-bookworm-slim (glibc) — não Alpine: @discordjs/opus e sodium-native
 # publicam binário pré-compilado só para glibc; em musl o npm recompila do
 # zero e isso falha em arm64.
@@ -74,6 +88,9 @@ COPY --from=builder /app/packages/shared/package.json ./packages/shared/
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/apps/icarus/package.json ./apps/icarus/
 COPY --from=builder /app/apps/icarus/dist ./apps/icarus/dist
+
+COPY --from=whisper /opt/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=whisper /opt/whisper.cpp/models/ggml-base.bin /opt/modelos/ggml-base.bin
 
 RUN mkdir -p /app/music-cache /app/cookies \
     && chown -R node:node /app

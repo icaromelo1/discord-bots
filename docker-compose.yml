@@ -30,6 +30,7 @@ services:
     env_file: apps/icarus/.env
     volumes:
       - ./apps/icarus/music-cache:/app/music-cache
+      - ./apps/icarus/conhecimento:/app/conhecimento:ro
       - /home/ubuntu/.config/rclone:/home/node/.config/rclone
       - /home/ubuntu/projects/kairos-api/cookies:/app/cookies:ro
     networks:
