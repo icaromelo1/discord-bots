@@ -1,3 +1,4 @@
+import { logPrefix } from '../config'
 import {
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
@@ -5,16 +6,16 @@ import {
   type RESTPostAPIApplicationCommandsJSONBody,
   type VoiceBasedChannel,
 } from 'discord.js'
-import { isGuildAllowed } from '../client'
-import { extractPlaylistId, extractYoutubeId, searchYoutube, YtDlpError } from '../../library/ytdlp'
-import { isKnown, listLibrary, resolveTrack } from '../../library/library'
-import { QueueFullError } from '../../queue/queue'
-import type { PlayerController } from '../../player/controller'
-import { buildPanel, type PanelManager } from '../panel'
-import { buildSearchMenu } from '../search-menu'
-import { buildLibraryMenu } from '../library-menu'
-import { buildQueuePanel, SelecaoFila } from '../queue-panel'
-import { handlePlaylist } from '../playlist'
+import { isGuildAllowed } from '../discord/client'
+import { extractPlaylistId, extractYoutubeId, searchYoutube, YtDlpError } from '../library/ytdlp'
+import { isKnown, listLibrary, resolveTrack } from '../library/library'
+import { QueueFullError } from '../queue/queue'
+import type { PlayerController } from '../player/controller'
+import { buildPanel, type PanelManager } from './panel'
+import { buildSearchMenu } from './search-menu'
+import { buildLibraryMenu } from './library-menu'
+import { buildQueuePanel, SelecaoFila } from './queue-panel'
+import { handlePlaylist } from './playlist'
 
 export interface CommandContext {
   controller: PlayerController
@@ -54,7 +55,7 @@ const bibliotecaCommand = new SlashCommandBuilder()
     option.setName('busca').setDescription('Filtrar pelo título da música').setRequired(false),
   )
 
-export const commandData: RESTPostAPIApplicationCommandsJSONBody[] = [
+export const musicCommandData: RESTPostAPIApplicationCommandsJSONBody[] = [
   tocarCommand,
   filaCommand,
   pularCommand,
@@ -63,6 +64,9 @@ export const commandData: RESTPostAPIApplicationCommandsJSONBody[] = [
   sairCommand,
   bibliotecaCommand,
 ].map((builder) => builder.toJSON())
+
+// usado pelo roteamento para saber o que é dele quando o app tem comandos próprios
+export const MUSIC_COMMAND_NAMES = new Set(musicCommandData.map((c) => c.name))
 
 
 async function guardGuild(interaction: ChatInputCommandInteraction): Promise<string | null> {
@@ -149,7 +153,7 @@ export async function enfileirarPorId(
     if (error instanceof YtDlpError || error instanceof QueueFullError) {
       return { ok: false, erro: error.message }
     }
-    console.error('[discord-dj] erro inesperado ao enfileirar:', error)
+    console.error(`${logPrefix()} erro inesperado ao enfileirar:`, error)
     return { ok: false, erro: 'Deu ruim aqui — tenta de novo daqui a pouco.' }
   }
 }
@@ -203,7 +207,7 @@ async function handleTocar(interaction: ChatInputCommandInteraction, guildId: st
         await interaction.editReply(error.message)
         return
       }
-      console.error('[discord-dj] erro inesperado na busca:', error)
+      console.error(`${logPrefix()} erro inesperado na busca:`, error)
       await interaction.editReply('Não consegui buscar agora — tenta de novo daqui a pouco.')
     }
     return

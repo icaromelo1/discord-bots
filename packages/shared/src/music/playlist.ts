@@ -1,5 +1,6 @@
+import { getSharedConfig, logPrefix } from '../config'
 import type { ChatInputCommandInteraction, VoiceBasedChannel } from 'discord.js'
-import { config } from '../config'
+
 import { listPlaylist, YtDlpError } from '../library/ytdlp'
 import type { PlayerController } from '../player/controller'
 import type { QueueItem } from '../queue/queue'
@@ -48,13 +49,13 @@ export async function handlePlaylist(
 
     return {
       ok: true,
-      mensagem: `${prefixo} — ${adicionadas} faixas na fila. Outras ${cortadas} não couberam (a fila tem limite de ${config.player.maxQueue}).`,
+      mensagem: `${prefixo} — ${adicionadas} faixas na fila. Outras ${cortadas} não couberam (a fila tem limite de ${getSharedConfig().player.maxQueue}).`,
     }
   } catch (error) {
     if (error instanceof YtDlpError) {
       return { ok: false, mensagem: error.message }
     }
-    console.error('[discord-dj] erro inesperado ao carregar playlist:', error)
+    console.error(`${logPrefix()} erro inesperado ao carregar playlist:`, error)
     return { ok: false, mensagem: 'Não consegui carregar essa playlist agora — tenta de novo daqui a pouco.' }
   }
 }

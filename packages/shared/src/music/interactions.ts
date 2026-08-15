@@ -1,12 +1,14 @@
+import { logPrefix } from '../config'
 import {
   Events,
   type ButtonInteraction,
   type Client,
   type GuildMember,
+  type Interaction,
   type StringSelectMenuInteraction,
 } from 'discord.js'
-import { isGuildAllowed } from './client'
-import { enfileirarPorId, handleCommand, type CommandContext } from './commands'
+import { isGuildAllowed } from '../discord/client'
+import { enfileirarPorId, handleCommand, MUSIC_COMMAND_NAMES, type CommandContext } from './commands'
 import { buildPanel, PANEL_BUTTON_IDS, type PanelManager } from './panel'
 import { buildLibraryMenu, entradaParaItem, LIBRARY_MENU_ID } from './library-menu'
 import { buildQueuePanel, QUEUE_IDS, SelecaoFila } from './queue-panel'
@@ -86,7 +88,7 @@ async function handleLibraryPick(interaction: StringSelectMenuInteraction, ctx: 
       entradaParaItem(entrada, interaction.user.id, interaction.user.username),
     ])
   } catch (error) {
-    console.error('[discord-dj] falha ao enfileirar da biblioteca:', error)
+    console.error(`${logPrefix()} falha ao enfileirar da biblioteca:`, error)
     await interaction.editReply({ content: 'Não deu pra adicionar essa faixa agora.' })
     return
   }
@@ -216,41 +218,69 @@ async function handleSearchPick(interaction: StringSelectMenuInteraction, ctx: C
   await ctx.panelManager.attach(guildId, painel)
 }
 
-export function registerInteractionHandlers(
+export function createMusicContext(controller: PlayerController, panelManager: PanelManager): CommandContext {
+  return { controller, panelManager, selecaoFila: new SelecaoFila() }
+}
+
+/**
+ * Trata uma interação se ela pertencer à música. Devolve `true` quando tratou.
+ *
+ * Devolve booleano em vez de registrar o próprio listener porque o Icarus tem
+ * interações próprias além das de música: quem compõe o roteamento é o app, que
+ * tenta a música primeiro e cai no que é dele quando esta função recusa.
+ */
+export async function handleMusicInteraction(interaction: Interaction, ctx: CommandContext): Promise<boolean> {
+  if (interaction.isChatInputCommand()) {
+    if (!MUSIC_COMMAND_NAMES.has(interaction.commandName)) return false
+    await handleCommand(interaction, ctx)
+    return true
+  }
+
+  if (interaction.isButton()) {
+    if (interaction.customId.startsWith('dj:q:')) {
+      await handleQueueInteraction(interaction, ctx)
+      return true
+    }
+    if (interaction.customId.startsWith('dj:')) {
+      await handleButton(interaction, ctx.controller)
+      return true
+    }
+    return false
+  }
+
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === SEARCH_MENU_ID) {
+      await handleSearchPick(interaction, ctx)
+      return true
+    }
+    if (interaction.customId === LIBRARY_MENU_ID) {
+      await handleLibraryPick(interaction, ctx)
+      return true
+    }
+    if (interaction.customId === QUEUE_IDS.select) {
+      await handleQueueInteraction(interaction, ctx)
+      return true
+    }
+  }
+
+  return false
+}
+
+/** Atalho para app que só tem música: registra o listener e trata tudo. */
+export function registerMusicHandlers(
   client: Client,
   controller: PlayerController,
   panelManager: PanelManager,
-): void {
-  const ctx: CommandContext = { controller, panelManager, selecaoFila: new SelecaoFila() }
+): CommandContext {
+  const ctx = createMusicContext(controller, panelManager)
 
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
-      if (interaction.isChatInputCommand()) {
-        await handleCommand(interaction, ctx)
-        return
-      }
-      if (interaction.isButton() && interaction.customId.startsWith('dj:q:')) {
-        await handleQueueInteraction(interaction, ctx)
-        return
-      }
-      if (interaction.isButton()) {
-        await handleButton(interaction, controller)
-        return
-      }
-      if (interaction.isStringSelectMenu() && interaction.customId === SEARCH_MENU_ID) {
-        await handleSearchPick(interaction, ctx)
-        return
-      }
-      if (interaction.isStringSelectMenu() && interaction.customId === LIBRARY_MENU_ID) {
-        await handleLibraryPick(interaction, ctx)
-        return
-      }
-      if (interaction.isStringSelectMenu() && interaction.customId === QUEUE_IDS.select) {
-        await handleQueueInteraction(interaction, ctx)
-        return
-      }
+      await handleMusicInteraction(interaction, ctx)
     } catch (error) {
-      console.error('[discord-dj] erro ao processar interação:', error)
+      console.error(`${logPrefix()} erro ao processar interação:`, error)
     }
   })
+
+  return ctx
 }

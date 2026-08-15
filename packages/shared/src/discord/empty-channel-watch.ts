@@ -1,3 +1,4 @@
+import { logPrefix } from '../config'
 import { Events, type Client } from 'discord.js'
 import type { PlayerController } from '../player/controller'
 
@@ -19,7 +20,7 @@ export function installEmptyChannelWatch(client: Client, controller: PlayerContr
     const humanos = channel.members.filter((member) => !member.user.bot).size
     if (humanos > 0) return
 
-    console.log(`[discord-dj] call vazia na guild ${guildId}, saindo`)
+    console.log(`${logPrefix()} call vazia na guild ${guildId}, saindo`)
     controller.leave(guildId)
   })
 }

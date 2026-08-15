@@ -32,3 +32,15 @@ export {
   type ResolvedTrack,
   type LibraryEntry,
 } from './library/library'
+
+export { createClient, isGuildAllowed, installGuildGuard } from './discord/client'
+export { registerCommands } from './discord/register-commands'
+export { installEmptyChannelWatch } from './discord/empty-channel-watch'
+
+export { musicCommandData, MUSIC_COMMAND_NAMES, type CommandContext } from './music/commands'
+export {
+  createMusicContext,
+  handleMusicInteraction,
+  registerMusicHandlers,
+} from './music/interactions'
+export { buildPanel, PanelManager, PANEL_BUTTON_IDS } from './music/panel'

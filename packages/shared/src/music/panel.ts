@@ -1,3 +1,4 @@
+import { logPrefix } from '../config'
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, type Message } from 'discord.js'
 import type { PlayerController, PlayerState } from '../player/controller'
 import type { QueueItem } from '../queue/queue'
@@ -138,7 +139,7 @@ export class PanelManager {
     try {
       await message.edit(buildPanel(state))
     } catch (error) {
-      console.error(`[discord-dj] falha ao reeditar painel da guild ${guildId}:`, error)
+      console.error(`${logPrefix()} falha ao reeditar painel da guild ${guildId}:`, error)
       this.forget(guildId)
     }
   }
