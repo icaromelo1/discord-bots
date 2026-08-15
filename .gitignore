@@ -4,3 +4,4 @@ dist/
 music-cache/
 .DS_Store
 .claude/
+dist/
