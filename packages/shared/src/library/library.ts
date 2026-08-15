@@ -1,4 +1,4 @@
-import { AppDataSource } from '../db/data-source'
+import { getDataSource } from '../db/data-source-ref'
 import { GuildTrack } from '../db/guild-track.entity'
 import { Track } from '../db/track.entity'
 import { musicCache } from './cache'
@@ -42,7 +42,7 @@ async function ensureCached(driveFile: string): Promise<void> {
 }
 
 async function upsertGuildTrack(guildId: string, trackId: string, userId: string, userName: string): Promise<void> {
-  await AppDataSource.getRepository(GuildTrack)
+  await getDataSource().getRepository(GuildTrack)
     .createQueryBuilder()
     .insert()
     .into(GuildTrack)
@@ -67,7 +67,7 @@ async function downloadAndStore(youtubeId: string, onProgress?: (label: string) 
   onProgress?.('enviando pro armazenamento...')
   await driveStorage.upload(localPath, driveFile)
 
-  const trackRepo = AppDataSource.getRepository(Track)
+  const trackRepo = getDataSource().getRepository(Track)
   // orIgnore + releitura em vez de insert direto: o dedup em memória não cobre a
   // janela entre o findOne de resolveTrack e a entrada no Map, e ali dois pedidos
   // simultâneos violariam o unique de youtube_id em vez de reaproveitar a linha.
@@ -90,7 +90,7 @@ export async function resolveTrack(
   userName: string,
   onProgress?: (label: string) => void,
 ): Promise<ResolvedTrack> {
-  const trackRepo = AppDataSource.getRepository(Track)
+  const trackRepo = getDataSource().getRepository(Track)
   const existing = await trackRepo.findOne({ where: { youtubeId } })
 
   if (existing) {
@@ -114,12 +114,12 @@ export async function resolveTrack(
 }
 
 export async function isKnown(youtubeId: string): Promise<boolean> {
-  const count = await AppDataSource.getRepository(Track).count({ where: { youtubeId } })
+  const count = await getDataSource().getRepository(Track).count({ where: { youtubeId } })
   return count > 0
 }
 
 export async function listLibrary(guildId: string, search?: string): Promise<LibraryEntry[]> {
-  const qb = AppDataSource.getRepository(GuildTrack)
+  const qb = getDataSource().getRepository(GuildTrack)
     .createQueryBuilder('gt')
     .innerJoin(Track, 't', 't.id = gt.trackId')
     .select('gt.trackId', 'trackId')
@@ -150,5 +150,5 @@ export async function markPlayed(guildId: string, trackId: string | null): Promi
   // item de fila ainda não resolvido chega aqui com trackId nulo; sem a guarda isso
   // vira UPDATE ... WHERE track_id = NULL, que não casa com nada e falha calado
   if (!trackId) return
-  await AppDataSource.getRepository(GuildTrack).update({ guildId, trackId }, { lastPlayedAt: new Date() })
+  await getDataSource().getRepository(GuildTrack).update({ guildId, trackId }, { lastPlayedAt: new Date() })
 }

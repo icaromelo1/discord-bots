@@ -1,3 +1,4 @@
+import { logPrefix } from '../config'
 import type { VoiceBasedChannel } from 'discord.js'
 import { ensureLocalFile, markPlayed, resolveTrack, type ResolvedTrack } from '../library/library'
 import { QueueManager, type QueueItem } from '../queue/queue'
@@ -107,7 +108,7 @@ export class PlayerController {
       // é isto que mantém o lookahead em exatamente uma
       this.prefetchNext(guildId)
     } catch (error) {
-      console.error(`[discord-dj] falha ao tocar ${next.youtubeId} na guild ${guildId}:`, error)
+      console.error(`${logPrefix()} falha ao tocar ${next.youtubeId} na guild ${guildId}:`, error)
       // uma faixa quebrada não pode travar a fila inteira
       await this.advance(guildId)
     }
@@ -149,7 +150,7 @@ export class PlayerController {
       })
       .catch((error) => {
         // falha aqui é silenciosa pro chat: a faixa é tentada de novo na vez dela
-        console.error(`[discord-dj] prefetch de ${alvo.item.youtubeId} falhou:`, error)
+        console.error(`${logPrefix()} prefetch de ${alvo.item.youtubeId} falhou:`, error)
       })
       .finally(() => {
         if (this.prefetches.get(guildId) === controle) this.prefetches.delete(guildId)

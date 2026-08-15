@@ -1,21 +1,28 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { config } from '../config'
+import { getSharedConfig } from '../config'
 
 export class MusicCache {
-  private readonly dir: string
+  private readonly dirFixo: string | null
+  private garantido = false
 
-  constructor(dir: string = config.library.cacheDir) {
-    this.dir = path.resolve(dir)
-    fs.mkdirSync(this.dir, { recursive: true })
+  constructor(dir?: string) {
+    this.dirFixo = dir ? path.resolve(dir) : null
   }
 
+  // A configuração é lida aqui, e não no construtor: a instância padrão é criada no
+  // carregamento do módulo, antes de o app chamar configureShared().
   dirPath(): string {
-    return this.dir
+    const dir = this.dirFixo ?? path.resolve(getSharedConfig().library.cacheDir)
+    if (!this.garantido) {
+      fs.mkdirSync(dir, { recursive: true })
+      this.garantido = true
+    }
+    return dir
   }
 
   localPath(fileName: string): string {
-    return path.join(this.dir, fileName)
+    return path.join(this.dirPath(), fileName)
   }
 
   has(fileName: string): boolean {

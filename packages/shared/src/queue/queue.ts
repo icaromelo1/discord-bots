@@ -1,4 +1,4 @@
-import { config } from '../config'
+import { getSharedConfig } from '../config'
 
 export interface QueueItem {
   youtubeId: string
@@ -55,15 +55,15 @@ export class QueueManager {
 
   add(guildId: string, item: QueueItem): void {
     const state = this.getGuildState(guildId)
-    if (state.items.length >= config.player.maxQueue) {
-      throw new QueueFullError(config.player.maxQueue)
+    if (state.items.length >= getSharedConfig().player.maxQueue) {
+      throw new QueueFullError(getSharedConfig().player.maxQueue)
     }
     state.items.push(item)
   }
 
   addMany(guildId: string, items: QueueItem[]): { adicionadas: number; cortadas: number } {
     const state = this.getGuildState(guildId)
-    const espaco = Math.max(0, config.player.maxQueue - state.items.length)
+    const espaco = Math.max(0, getSharedConfig().player.maxQueue - state.items.length)
     const adicionadas = Math.min(espaco, items.length)
     state.items.push(...items.slice(0, adicionadas))
     return { adicionadas, cortadas: items.length - adicionadas }
@@ -159,7 +159,7 @@ export class QueueManager {
     const key = `${guildId}:${userId}`
     const lastAt = this.lastDownloadAt.get(key)
     if (lastAt === undefined) return true
-    return now - lastAt >= config.player.downloadCooldownMs
+    return now - lastAt >= getSharedConfig().player.downloadCooldownMs
   }
 
   markDownload(guildId: string, userId: string, now: number = Date.now()): void {

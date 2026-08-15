@@ -11,7 +11,7 @@ import {
   joinVoiceChannel,
 } from '@discordjs/voice'
 import type { VoiceBasedChannel } from 'discord.js'
-import { config } from '../config'
+import { getSharedConfig } from '../config'
 
 interface GuildVoiceState {
   connection: VoiceConnection
@@ -139,7 +139,7 @@ export class VoiceManager {
     this.clearIdleTimer(state)
     state.idleTimer = setTimeout(() => {
       this.leave(guildId)
-    }, config.player.idleTimeoutMs)
+    }, getSharedConfig().player.idleTimeoutMs)
   }
 
   private clearIdleTimer(state: GuildVoiceState): void {

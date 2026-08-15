@@ -2,7 +2,7 @@ import { execFile as execFileCallback } from 'node:child_process'
 import { promisify } from 'node:util'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { config } from '../config'
+import { getSharedConfig, logPrefix } from '../config'
 
 const execFile = promisify(execFileCallback)
 
@@ -88,7 +88,7 @@ function formatDuration(durationSec: number): string {
 // já ter baixado, e escrever no original faria dois serviços disputarem o mesmo
 // credencial.
 function prepareCookies(): string | null {
-  const source = config.library.cookiesFile
+  const source = getSharedConfig().library.cookiesFile
   if (!source) return null
 
   try {
@@ -97,7 +97,7 @@ function prepareCookies(): string | null {
     return null
   }
 
-  const runtimeCopy = path.join(config.library.cacheDir, '.cookies-runtime.txt')
+  const runtimeCopy = path.join(getSharedConfig().library.cacheDir, '.cookies-runtime.txt')
   try {
     fs.mkdirSync(path.dirname(runtimeCopy), { recursive: true })
     fs.copyFileSync(source, runtimeCopy)
@@ -113,12 +113,12 @@ function cookieArgs(): string[] {
 }
 
 function potArgs(): string[] {
-  const potProviderUrl = config.ytdlp.potProviderUrl
+  const potProviderUrl = getSharedConfig().ytdlp.potProviderUrl
   if (!potProviderUrl) return []
 
   return [
     '--extractor-args',
-    `youtube:player_client=${config.ytdlp.playerClients}`,
+    `youtube:player_client=${getSharedConfig().ytdlp.playerClients}`,
     '--extractor-args',
     `youtubepot-bgutilhttp:base_url=${potProviderUrl}`,
   ]
@@ -127,7 +127,7 @@ function potArgs(): string[] {
 export function translateError(message: string): YtDlpError {
   // o stderr bruto do yt-dlp só existe aqui; sem registrar, toda falha vira a
   // mensagem amigável e não há como diagnosticar pelo log do container
-  console.error('[discord-dj] yt-dlp falhou:', message.slice(0, 2000))
+  console.error(`${logPrefix()} yt-dlp falhou:`, message.slice(0, 2000))
 
   if (/Sign in to confirm/i.test(message)) {
     return new YtDlpError(
@@ -193,7 +193,7 @@ export async function searchYoutube(termo: string, limite = 5): Promise<SearchRe
     .filter((entry) => entry.live_status !== 'is_live')
     // não oferecer o que seria recusado na hora de tocar: busca por termo comum traz
     // mixes de várias horas, e escolher um deles só devolveria erro
-    .filter((entry) => !entry.duration || entry.duration <= config.ytdlp.maxDurationSec)
+    .filter((entry) => !entry.duration || entry.duration <= getSharedConfig().ytdlp.maxDurationSec)
     .map((entry) => ({
       youtubeId: entry.id as string,
       title: entry.title as string,
@@ -229,7 +229,7 @@ export async function listPlaylist(url: string): Promise<PlaylistInfo> {
   const entradas = (data.entries ?? [])
     .filter((entry) => entry.id && YOUTUBE_ID_REGEX.test(entry.id) && entry.title)
     .filter((entry) => entry.live_status !== 'is_live')
-    .filter((entry) => !entry.duration || entry.duration <= config.ytdlp.maxDurationSec)
+    .filter((entry) => !entry.duration || entry.duration <= getSharedConfig().ytdlp.maxDurationSec)
     .map((entry) => ({
       youtubeId: entry.id as string,
       title: entry.title as string,
@@ -269,9 +269,9 @@ export async function fetchInfo(youtubeId: string): Promise<YtDlpInfo> {
     throw new YtDlpError('Não deu pra identificar a duração deste vídeo.', 'desconhecido')
   }
 
-  if (data.duration > config.ytdlp.maxDurationSec) {
+  if (data.duration > getSharedConfig().ytdlp.maxDurationSec) {
     throw new YtDlpError(
-      `Esse vídeo tem ${formatDuration(data.duration)} — passa do limite de ${formatDuration(config.ytdlp.maxDurationSec)}.`,
+      `Esse vídeo tem ${formatDuration(data.duration)} — passa do limite de ${formatDuration(getSharedConfig().ytdlp.maxDurationSec)}.`,
       'muito-longo',
     )
   }

@@ -1,17 +1,27 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { config } from '../config'
+import { getSharedConfig } from '../config'
 
 const execFileAsync = promisify(execFile)
 const EXEC_OPTS = { maxBuffer: 10 * 1024 * 1024, timeout: 5 * 60 * 1000 }
 
 export class DriveStorage {
-  private readonly remote: string
-  private readonly configPath: string | null
+  private readonly remoteFixo: string | null
+  private readonly configPathFixo: string | null | undefined
 
-  constructor(remote: string = config.library.driveRemote, configPath: string | null = config.library.rcloneConfigPath) {
-    this.remote = remote
-    this.configPath = configPath
+  constructor(remote?: string, configPath?: string | null) {
+    this.remoteFixo = remote ?? null
+    this.configPathFixo = configPath
+  }
+
+  // Lidos por chamada, e não no construtor: a instância padrão nasce no carregamento
+  // do módulo, antes de configureShared().
+  private get remote(): string {
+    return this.remoteFixo ?? getSharedConfig().library.driveRemote
+  }
+
+  private get configPath(): string | null {
+    return this.configPathFixo !== undefined ? this.configPathFixo : getSharedConfig().library.rcloneConfigPath
   }
 
   private args(extra: string[]): string[] {
