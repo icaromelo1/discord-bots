@@ -3,3 +3,4 @@ dist/
 .env
 music-cache/
 .DS_Store
+.claude/

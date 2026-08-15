@@ -1,34 +1,22 @@
 {
-  "name": "discord-dj",
+  "name": "discord-bots",
   "version": "0.1.0",
   "private": true,
-  "description": "Bot de Discord que toca música do YouTube em vários servidores ao mesmo tempo",
-  "main": "dist/index.js",
+  "description": "Bots de Discord do Icaro — DJ NARUTINHO (música) e Icarus (voz), sobre uma base compartilhada",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
-    "typecheck": "tsc --noEmit",
+    "build": "npm run build -w @bots/shared && npm run build -w @bots/dj",
+    "build:shared": "npm run build -w @bots/shared",
+    "typecheck": "tsc --build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typeorm": "typeorm-ts-node-commonjs -d src/db/data-source.ts",
-    "migration:generate": "npm run typeorm -- migration:generate",
-    "migration:create": "typeorm-ts-node-commonjs migration:create",
-    "migration:run": "npm run typeorm -- migration:run",
-    "migration:revert": "npm run typeorm -- migration:revert"
+    "dev:dj": "npm run dev -w @bots/dj"
   },
   "engines": {
     "node": ">=22.13.0"
-  },
-  "dependencies": {
-    "@discordjs/opus": "^0.10.0",
-    "@discordjs/voice": "^0.19.2",
-    "discord.js": "^14.27.0",
-    "dotenv": "^17.4.2",
-    "pg": "^8.23.0",
-    "reflect-metadata": "^0.2.2",
-    "sodium-native": "^5.1.0",
-    "typeorm": "^1.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
