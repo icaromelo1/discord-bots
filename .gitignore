@@ -6,3 +6,5 @@ music-cache/
 .claude/
 dist/
 *.tsbuildinfo
+apps/*/conhecimento/*.md
+!apps/*/conhecimento/*.example.md
