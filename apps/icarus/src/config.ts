@@ -38,7 +38,7 @@ export const config = {
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || null,
     // preview: pode mudar ou sumir sem aviso, por isso vive em env
-    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025',
+    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-native-audio-latest',
     voz: process.env.GEMINI_VOICE || 'Puck',
     idioma: process.env.GEMINI_LANGUAGE || 'pt-BR',
   },
