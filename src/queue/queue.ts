@@ -1,12 +1,13 @@
 import { config } from '../config'
 
 export interface QueueItem {
-  trackId: string
   youtubeId: string
   title: string
   durationSec: number
   addedBy: string
   addedByName: string
+  trackId: string | null
+  driveFile: string | null
 }
 
 export interface GuildQueueSnapshot {
@@ -58,6 +59,62 @@ export class QueueManager {
       throw new QueueFullError(config.player.maxQueue)
     }
     state.items.push(item)
+  }
+
+  addMany(guildId: string, items: QueueItem[]): { adicionadas: number; cortadas: number } {
+    const state = this.getGuildState(guildId)
+    const espaco = Math.max(0, config.player.maxQueue - state.items.length)
+    const adicionadas = Math.min(espaco, items.length)
+    state.items.push(...items.slice(0, adicionadas))
+    return { adicionadas, cortadas: items.length - adicionadas }
+  }
+
+  move(guildId: string, from: number, to: number): boolean {
+    const state = this.getGuildState(guildId)
+    if (!this.isValidIndex(state.items, from) || !this.isValidIndex(state.items, to)) {
+      return false
+    }
+    const [item] = state.items.splice(from, 1)
+    state.items.splice(to, 0, item)
+    return true
+  }
+
+  remove(guildId: string, index: number): QueueItem | null {
+    const state = this.getGuildState(guildId)
+    if (!this.isValidIndex(state.items, index)) {
+      return null
+    }
+    const [item] = state.items.splice(index, 1)
+    return item
+  }
+
+  playNext(guildId: string, index: number): boolean {
+    return this.move(guildId, index, 0)
+  }
+
+  firstUnresolved(guildId: string): { item: QueueItem; index: number } | null {
+    const state = this.getGuildState(guildId)
+    const index = state.items.findIndex((item) => item.trackId === null)
+    if (index === -1) return null
+    return { item: state.items[index], index }
+  }
+
+  markResolved(guildId: string, youtubeId: string, trackId: string, driveFile: string): void {
+    const state = this.getGuildState(guildId)
+    for (const item of state.items) {
+      if (item.youtubeId === youtubeId) {
+        item.trackId = trackId
+        item.driveFile = driveFile
+      }
+    }
+    if (state.current && state.current.youtubeId === youtubeId) {
+      state.current.trackId = trackId
+      state.current.driveFile = driveFile
+    }
+  }
+
+  private isValidIndex(items: QueueItem[], index: number): boolean {
+    return Number.isInteger(index) && index >= 0 && index < items.length
   }
 
   next(guildId: string): QueueItem | null {

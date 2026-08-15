@@ -45,7 +45,7 @@ export const config = {
   },
   player: {
     idleTimeoutMs: int('IDLE_TIMEOUT_MS', 120_000),
-    maxQueue: int('MAX_QUEUE', 50),
+    maxQueue: int('MAX_QUEUE', 200),
     downloadCooldownMs: int('DOWNLOAD_COOLDOWN_MS', 5_000),
   },
 } as const
