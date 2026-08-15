@@ -7,3 +7,4 @@
 .claude
 docs
 *.md
+**/*.tsbuildinfo
