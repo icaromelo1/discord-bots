@@ -69,31 +69,47 @@ describe('WakeDetector.examinar', () => {
   })
 })
 
-describe('encontrarAtivacao — casos reais capturados na Bayuka', () => {
-  it('reconhece a transcrição real que o Whisper produziu do pedido de música', () => {
-    // fala original: "Icarus coloca pra tocar tal música"
-    const r = encontrarAtivacao('E que os coloca pra tocar é que acabou namoro e não acabou amo.', 'icarus')
-    expect(r.achou).toBe(true)
-    expect(r.resto.toLowerCase()).toContain('coloca pra tocar')
-  })
-
-  it('reconhece as variantes fonéticas mais comuns', () => {
-    for (const variante of ['Icarus', 'Ícaro', 'icaros', 'E carus', 'Ycarus']) {
-      expect(encontrarAtivacao(`${variante}, tá me ouvindo?`, 'icarus').achou).toBe(true)
-    }
-  })
-
-  it('não casa em palavra que apenas contém a variante', () => {
-    expect(encontrarAtivacao('picarus é outra coisa', 'icarus').achou).toBe(false)
-    expect(encontrarAtivacao('icaruso não conta', 'icarus').achou).toBe(false)
+describe('encontrarAtivacao — o gatilho antigo "Icarus" foi abandonado', () => {
+  // O Whisper transcreveu "Icarus" como "E que os", "Carlos" e "Canva-se" em três
+  // testes reais na Bayuka. Em vez de perseguir cada erro, o gatilho virou "Ícaro",
+  // que existe em português. Estes testes registram que NÃO dependemos mais daquelas
+  // formas — se alguém as reintroduzir, é sinal de que voltou a tapar buraco.
+  it('não casa mais nas transcrições erradas do nome antigo', () => {
+    expect(encontrarAtivacao('E que os coloca pra tocar', 'icaro').achou).toBe(false)
+    expect(encontrarAtivacao('E aí, Carlos. Canva-se.', 'icaro').achou).toBe(false)
   })
 
   it('não dispara em conversa comum sem o nome', () => {
-    expect(encontrarAtivacao('então acho que pode ser da academia', 'icarus').achou).toBe(false)
-    expect(encontrarAtivacao('mas o Eduardo pega 500kg no legpress', 'icarus').achou).toBe(false)
+    expect(encontrarAtivacao('então acho que pode ser da academia', 'icaro').achou).toBe(false)
+    expect(encontrarAtivacao('mas o Eduardo pega 500kg no legpress', 'icaro').achou).toBe(false)
   })
 
-  it('palavra de ativação customizada não usa as variantes de Icarus', () => {
-    expect(encontrarAtivacao('E que os coloca pra tocar', 'jarvis').achou).toBe(false)
+  it('palavra de ativação customizada não usa as variantes internas', () => {
+    expect(encontrarAtivacao('Ícaro, toca um som', 'jarvis').achou).toBe(false)
+  })
+})
+
+describe('gatilho trocado para "Ícaro" — o Whisper mangava "Icarus" em português', () => {
+  it('reconhece com e sem acento', () => {
+    expect(encontrarAtivacao('Ícaro, quem é você?', 'icaro').achou).toBe(true)
+    expect(encontrarAtivacao('Icaro, quem é você?', 'icaro').achou).toBe(true)
+    expect(encontrarAtivacao('ICARO, tá aí?', 'icaro').achou).toBe(true)
+  })
+
+  it('continua aceitando quem falar Icarus', () => {
+    expect(encontrarAtivacao('Icarus, toca um som', 'icaro').achou).toBe(true)
+  })
+
+  it('extrai o pedido depois do nome', () => {
+    const r = encontrarAtivacao('Ícaro, coloca Rap da Akatsuki pra tocar', 'icaro')
+    expect(r.resto).toBe('coloca Rap da Akatsuki pra tocar')
+  })
+
+  it('não dispara em palavra que apenas contém o nome', () => {
+    expect(encontrarAtivacao('icarozinho não conta', 'icaro').achou).toBe(false)
+  })
+
+  it('não dispara em conversa comum', () => {
+    expect(encontrarAtivacao('acho que foi da academia mesmo', 'icaro').achou).toBe(false)
   })
 })

@@ -1,6 +1,6 @@
 import type { Transcritor } from '../memory/transcritor'
 
-const PALAVRA_PADRAO = 'icarus'
+const PALAVRA_PADRAO = 'icaro'
 
 /**
  * O Whisper erra o nome porque "Icarus" não é palavra do português. Estas são as formas
@@ -11,17 +11,13 @@ const PALAVRA_PADRAO = 'icarus'
  * Cada entrada é comparada em limite de palavra, então "picarus" continua não casando.
  */
 const VARIANTES = [
+  'icaro',
   'icarus',
   'icaros',
-  'icaro',
-  'icarous',
-  'ycarus',
-  'e carus',
-  'e que os',
-  'ekarus',
-  'aicarus',
-  'i carus',
-  'hicarus',
+  'ycaro',
+  'i caro',
+  'e caro',
+  'hicaro',
 ]
 
 export interface DeteccaoWake {
@@ -65,7 +61,8 @@ export function encontrarPalavra(texto: string, palavra: string): { achou: boole
  * Devolve o resto da frase a partir da variante que casar primeiro no texto.
  */
 export function encontrarAtivacao(texto: string, palavra: string): { achou: boolean; resto: string } {
-  const candidatas = palavra.toLowerCase() === PALAVRA_PADRAO ? VARIANTES : [palavra]
+  const normalizada = semAcento(palavra).toLowerCase()
+  const candidatas = normalizada === PALAVRA_PADRAO || normalizada === 'icarus' ? VARIANTES : [palavra]
 
   let melhor: { achou: boolean; resto: string; posicao: number } | null = null
   for (const candidata of candidatas) {

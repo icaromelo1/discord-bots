@@ -29,7 +29,7 @@ export const config = {
   },
   voz: {
     /** Palavra de ativação, minúscula e sem acento. */
-    wakeWord: (process.env.WAKE_WORD || 'icarus').toLowerCase(),
+    wakeWord: (process.env.WAKE_WORD || 'icaro').toLowerCase(),
     /** Janela de áudio que o detector examina, em ms. */
     wakeBufferMs: int('WAKE_BUFFER_MS', 3_000),
     /** Silêncio que encerra a sessão de conversa. */
