@@ -1,8 +1,10 @@
 import {
   AudioPlayer,
   AudioPlayerStatus,
+  AudioResource,
   NoSubscriberBehavior,
   PlayerSubscription,
+  StreamType,
   VoiceConnection,
   VoiceConnectionStatus,
   createAudioPlayer,
@@ -11,6 +13,7 @@ import {
   joinVoiceChannel,
 } from '@discordjs/voice'
 import type { VoiceBasedChannel } from 'discord.js'
+import type { Readable } from 'node:stream'
 import { getSharedConfig } from '../config'
 
 interface GuildVoiceState {
@@ -18,6 +21,7 @@ interface GuildVoiceState {
   player: AudioPlayer
   subscription: PlayerSubscription | undefined
   idleTimer: NodeJS.Timeout | null
+  resource: AudioResource | null
 }
 
 export class VoiceManager {
@@ -59,6 +63,7 @@ export class VoiceManager {
       player,
       subscription: connection.subscribe(player),
       idleTimer: null,
+      resource: null,
     }
 
     this.attachPlayerListeners(channel.guildId, state)
@@ -68,7 +73,10 @@ export class VoiceManager {
     return connection
   }
 
-  play(guildId: string, filePath: string): void {
+  // fonte aceita string (caminho de arquivo, uso do DJ) ou Readable (chunks vindos de
+  // rede, uso do Icarus/mouth) sem quebrar a assinatura antiga: quem já chama
+  // play(guildId, '/caminho.mp3') continua funcionando sem alterar nenhuma chamada
+  play(guildId: string, fonte: string | Readable, opcoes?: { tipo?: StreamType }): void {
     const state = this.states.get(guildId)
     if (!state) return
 
@@ -76,8 +84,25 @@ export class VoiceManager {
 
     // inlineVolume aqui e não depois: sem ele o recurso não tem controle de volume, e
     // abaixar a música durante uma fala exigiria recriar o recurso no meio da faixa
-    const resource = createAudioResource(filePath, { inlineVolume: true })
+    const resource = createAudioResource(fonte, {
+      inlineVolume: true,
+      inputType: opcoes?.tipo,
+    })
+    state.resource = resource
     state.player.play(resource)
+  }
+
+  definirVolume(guildId: string, volume: number): boolean {
+    const state = this.states.get(guildId)
+    if (!state?.resource?.volume) return false
+    state.resource.volume.setVolume(volume)
+    return true
+  }
+
+  volumeAtual(guildId: string): number | null {
+    const state = this.states.get(guildId)
+    if (!state?.resource?.volume) return null
+    return state.resource.volume.volume
   }
 
   pause(guildId: string): boolean {

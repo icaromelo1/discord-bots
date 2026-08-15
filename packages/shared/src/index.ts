@@ -6,6 +6,7 @@ export { GuildTrack } from './db/guild-track.entity'
 
 export { QueueManager, QueueFullError, type QueueItem, type GuildQueueSnapshot } from './queue/queue'
 export { VoiceManager } from './voice/voice'
+export { StreamType } from '@discordjs/voice'
 export { PlayerController, type PlayerState } from './player/controller'
 
 export { MusicCache, musicCache } from './library/cache'
