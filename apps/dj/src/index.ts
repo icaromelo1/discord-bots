@@ -16,6 +16,7 @@ import {
 } from '@bots/shared'
 import { buildSharedConfig } from './config'
 import { AppDataSource } from './db/data-source'
+import { iniciarDuckingServer } from './ducking-server'
 
 async function main(): Promise<void> {
   // antes de qualquer coisa que use a base compartilhada: ela lança se for usada
@@ -29,8 +30,23 @@ async function main(): Promise<void> {
 
   await registerCommands(musicCommandData)
 
-  const controller = new PlayerController(new VoiceManager(), new QueueManager())
+  const voiceManager = new VoiceManager()
+  const controller = new PlayerController(voiceManager, new QueueManager())
   const panelManager = new PanelManager(controller)
+
+  // ducking é conforto, não requisito: se a porta estiver ocupada, loga e segue sem
+  // travar o boot do DJ
+  const duckingPorta = Number(process.env.DUCKING_PORT || '8099')
+  let duckingServer: ReturnType<typeof iniciarDuckingServer> | null = null
+  try {
+    duckingServer = iniciarDuckingServer(voiceManager, duckingPorta)
+    duckingServer.on('error', (error) => {
+      console.error('[dj] servidor de ducking falhou:', error)
+      duckingServer = null
+    })
+  } catch (error) {
+    console.error('[dj] não foi possível iniciar o servidor de ducking:', error)
+  }
 
   const client = createClient()
   installGuildGuard(client)
@@ -45,6 +61,8 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[dj] recebido ${signal}, encerrando`)
+    const servidor = duckingServer
+    if (servidor) await new Promise<void>((resolve) => servidor.close(() => resolve()))
     await client.destroy()
     await AppDataSource.destroy()
     process.exit(0)
