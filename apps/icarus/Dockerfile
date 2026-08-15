@@ -10,7 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /opt
 RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp
 WORKDIR /opt/whisper.cpp
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j"$(nproc)" --config Release
+# BUILD_SHARED_LIBS=OFF é obrigatório: por padrão o whisper.cpp gera libwhisper.so e
+# libggml*.so, que ficariam para trás no COPY entre estágios — o binário até é copiado,
+# mas morre no runtime com "error while loading shared libraries".
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON \
+    && cmake --build build -j"$(nproc)" --config Release
 # dois modelos, dois propósitos: tiny responde a palavra de ativação em ~1s
 # (medido nesta VM), base transcreve a memória com mais precisão e pode demorar
 RUN bash ./models/download-ggml-model.sh tiny && bash ./models/download-ggml-model.sh base
