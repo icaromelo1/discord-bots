@@ -146,6 +146,9 @@ export async function ensureLocalFile(track: ResolvedTrack): Promise<string> {
   return musicCache.localPath(track.driveFile)
 }
 
-export async function markPlayed(guildId: string, trackId: string): Promise<void> {
+export async function markPlayed(guildId: string, trackId: string | null): Promise<void> {
+  // item de fila ainda não resolvido chega aqui com trackId nulo; sem a guarda isso
+  // vira UPDATE ... WHERE track_id = NULL, que não casa com nada e falha calado
+  if (!trackId) return
   await AppDataSource.getRepository(GuildTrack).update({ guildId, trackId }, { lastPlayedAt: new Date() })
 }
