@@ -40,32 +40,31 @@ function transcritorFalso(texto: string): Transcritor {
 }
 
 describe('WakeDetector.examinar', () => {
-  it('devolve a detecção quando a palavra aparece', async () => {
-    const detector = new WakeDetector(transcritorFalso('icarus, que horas são?'), 'icarus')
+  function detector(texto: string): WakeDetector {
+    const transcritor: Transcritor = { disponivel: () => true, transcrever: async () => texto }
+    return new WakeDetector(transcritor, 'icaro')
+  }
 
-    const deteccao = await detector.examinar('user-1', Buffer.alloc(0))
-
-    expect(deteccao).toEqual({
+  it('devolve o texto E a detecção quando a palavra aparece', async () => {
+    const r = await detector('Ícaro, toca um som').examinar('user-1', Buffer.alloc(0))
+    expect(r.deteccao).toEqual({
       userId: 'user-1',
-      texto: 'icarus, que horas são?',
-      textoAposNome: 'que horas são?',
+      texto: 'Ícaro, toca um som',
+      textoAposNome: 'toca um som',
     })
   })
 
-  it('devolve null quando a palavra não aparece', async () => {
-    const detector = new WakeDetector(transcritorFalso('só falando aqui'), 'icarus')
-
-    const deteccao = await detector.examinar('user-1', Buffer.alloc(0))
-
-    expect(deteccao).toBeNull()
+  // devolver o texto mesmo sem casar é o que alimenta o painel: transcrever de novo
+  // só para exibir dobraria o custo de CPU em toda fala que não é para o bot
+  it('devolve o texto mesmo quando a palavra não aparece', async () => {
+    const r = await detector('só falando aqui').examinar('user-1', Buffer.alloc(0))
+    expect(r.deteccao).toBeNull()
+    expect(r.texto).toBe('só falando aqui')
   })
 
-  it('devolve null quando a transcrição vem vazia', async () => {
-    const detector = new WakeDetector(transcritorFalso(''), 'icarus')
-
-    const deteccao = await detector.examinar('user-1', Buffer.alloc(0))
-
-    expect(deteccao).toBeNull()
+  it('devolve texto vazio e detecção nula quando a transcrição vem vazia', async () => {
+    const r = await detector('').examinar('user-1', Buffer.alloc(0))
+    expect(r).toEqual({ texto: '', deteccao: null })
   })
 })
 

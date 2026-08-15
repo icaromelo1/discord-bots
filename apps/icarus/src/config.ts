@@ -47,6 +47,10 @@ export const config = {
     djUrl: process.env.DJ_DUCKING_URL || null,
     volumeAoFalar: Number(process.env.DUCKING_VOLUME || '0.25'),
   },
+  painel: {
+    /** Porta do painel de diagnóstico. 0 desliga. */
+    porta: int('PAINEL_PORT', 8790),
+  },
   memoria: {
     /** Caminho do binário do whisper.cpp; vazio desliga a transcrição de ambiente. */
     whisperBin: process.env.WHISPER_BIN || null,

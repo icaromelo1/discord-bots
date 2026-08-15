@@ -26,6 +26,7 @@ import { FilaDeTranscricao } from './memory/fila'
 import { TranscritorDesligado, WhisperCppTranscritor } from './memory/transcritor'
 import { esquecerUsuario, resumoDoQueSabe } from './memory/repositorio'
 import { handleIcarusCommand, icarusCommandData, type IcarusCommandContext } from './discord/comandos'
+import { iniciarPainel } from './painel/servidor'
 
 async function main(): Promise<void> {
   const shared = buildSharedConfig()
@@ -109,11 +110,28 @@ async function main(): Promise<void> {
   // travar a conversa não é
   const rodarFila = setInterval(() => void fila.processar(), 15_000)
 
+  // painel de diagnóstico: só faz sentido publicado em 127.0.0.1 na VM, acessado por
+  // túnel SSH — ele mostra transcrição de conversa privada
+  const painel = config.painel.porta
+    ? iniciarPainel(config.painel.porta, () => {
+        const onde = conversa.onde()
+        return {
+          naCall: Boolean(onde),
+          canal: onde?.channelId ?? '—',
+          sessao: conversa.temSessao() ? 'aberta' : 'fechada',
+          wakeWord: config.voz.wakeWord,
+          fila: fila.tamanho(),
+        }
+      })
+    : null
+  if (painel) console.log(`[icarus] painel em http://127.0.0.1:${config.painel.porta}`)
+
   await client.login(shared.discord.token)
 
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[icarus] recebido ${signal}, encerrando`)
     clearInterval(rodarFila)
+    painel?.close()
     fila.parar()
     const onde = conversa.onde()
     if (onde) await conversa.sair(onde.guildId)

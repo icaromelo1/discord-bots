@@ -28,6 +28,10 @@ services:
     container_name: icarus
     restart: unless-stopped
     env_file: apps/icarus/.env
+    ports:
+      # SÓ em 127.0.0.1: o painel mostra transcrição de conversa privada e não tem
+      # autenticação. O acesso é por túnel SSH.
+      - "127.0.0.1:8790:8790"
     volumes:
       - ./apps/icarus/music-cache:/app/music-cache
       - ./apps/icarus/conhecimento:/app/conhecimento:ro

@@ -22,6 +22,7 @@ import { buscar } from './memory/busca'
 import type { ResultadoFerramenta } from './live/ferramentas'
 import { carregarConhecimento, carregarPersona } from './brain/persona'
 import { salvarFala } from './memory/repositorio'
+import { registro } from './painel/registro'
 import { FilaDeTranscricao } from './memory/fila'
 
 export interface ConversaEmCurso {
@@ -68,6 +69,10 @@ export class Conversa {
     })
     this.mouth.onComecouAFalar((guildId) => void this.ducking.abaixar(guildId))
     this.mouth.onParouDeFalar((guildId) => void this.ducking.restaurar(guildId))
+  }
+
+  temSessao(): boolean {
+    return this.sessao !== null
   }
 
   onde(): ConversaEmCurso | null {
@@ -117,7 +122,15 @@ export class Conversa {
       return
     }
 
-    const deteccao = await this.wake.examinar(trecho.userId, trecho.pcm)
+    const { texto, deteccao } = await this.wake.examinar(trecho.userId, trecho.pcm)
+    // registra também o que NÃO acordou: é justamente isso que revela como o
+    // reconhecedor está entendendo o nome
+    registro.registrar({
+      tipo: 'wake',
+      autor: nome,
+      texto: texto || '(sem fala reconhecida)',
+      acordou: Boolean(deteccao),
+    })
     if (!deteccao) return
 
     await this.abrirSessao(guildId, trecho, nome, deteccao.textoAposNome)
@@ -160,6 +173,7 @@ export class Conversa {
         },
         executarFerramenta: (nome, args) => this.executarFerramenta(guildId, nome, args),
       })
+      registro.registrar({ tipo: 'sessao', autor: nome, texto: 'sessão aberta', detalhe: pergunta })
       this.ultimoFalante = trecho.userId
       this.sessao.marcarFalante(nome)
       this.sessao.enviarAudio(trecho.pcm)
@@ -170,6 +184,7 @@ export class Conversa {
         this.avisar(guildId, error.message)
         return
       }
+      registro.registrar({ tipo: 'erro', autor: nome, texto: 'falha ao abrir sessão', detalhe: String(error) })
       console.error('[icarus] falha ao abrir sessão:', error)
       this.avisar(guildId, 'Não consegui te ouvir agora — tenta de novo daqui a pouco.')
     }
@@ -184,6 +199,7 @@ export class Conversa {
     nome: string,
     args: Record<string, unknown>,
   ): Promise<ResultadoFerramenta> {
+    registro.registrar({ tipo: 'ferramenta', autor: 'Icarus', texto: nome, detalhe: JSON.stringify(args) })
     const canal = this.canalDeVoz
     const estado = this.controller.state(guildId)
 
@@ -257,6 +273,12 @@ export class Conversa {
     userIdUsuario: string,
   ): Promise<void> {
     if (!texto.trim()) return
+    registro.registrar({
+      tipo: 'fala',
+      autor: quem === 'bot' ? 'Icarus' : nomeUsuario,
+      texto,
+      detalhe: 'gemini',
+    })
     try {
       await salvarFala({
         guildId,

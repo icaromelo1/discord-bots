@@ -81,14 +81,20 @@ export class WakeDetector {
     private readonly palavra: string = PALAVRA_PADRAO,
   ) {}
 
-  /** Transcreve o trecho e verifica se a palavra de ativação aparece. */
-  async examinar(userId: string, pcm16k: Buffer): Promise<DeteccaoWake | null> {
+  /**
+   * Transcreve o trecho e verifica se a palavra de ativação aparece.
+   *
+   * Devolve o texto SEMPRE, inclusive quando não acorda: transcrever de novo só para
+   * mostrar no painel dobraria o custo de CPU em toda fala que não é para o bot — e
+   * essas são a maioria.
+   */
+  async examinar(userId: string, pcm16k: Buffer): Promise<{ texto: string; deteccao: DeteccaoWake | null }> {
     const texto = await this.transcritor.transcrever(pcm16k)
-    if (!texto) return null
+    if (!texto) return { texto: '', deteccao: null }
 
     const { achou, resto } = encontrarAtivacao(texto, this.palavra)
-    if (!achou) return null
+    if (!achou) return { texto, deteccao: null }
 
-    return { userId, texto, textoAposNome: resto }
+    return { texto, deteccao: { userId, texto, textoAposNome: resto } }
   }
 }
