@@ -126,6 +126,59 @@ export function translateError(message: string): YtDlpError {
   return new YtDlpError('Não deu pra baixar o áudio agora. Tente de novo em alguns minutos.', 'desconhecido')
 }
 
+export interface SearchResult {
+  youtubeId: string
+  title: string
+  channel: string
+  durationSec: number
+}
+
+export async function searchYoutube(termo: string, limite = 5): Promise<SearchResult[]> {
+  const termoLimpo = termo.trim()
+  if (!termoLimpo) return []
+
+  // --flat-playlist evita resolver cada vídeo individualmente: a busca precisa ser
+  // rápida porque acontece antes de a pessoa escolher, e nada é baixado ainda.
+  const args = [
+    '-J',
+    '--flat-playlist',
+    '--no-warnings',
+    ...cookieArgs(),
+    ...potArgs(),
+    // pede a mais porque lives e vídeos longos demais são descartados abaixo;
+    // sem folga uma busca comum devolveria menos de 5 opções
+    `ytsearch${limite + 3}:${termoLimpo}`,
+  ]
+
+  let stdout: string
+  try {
+    const result = await execFile('yt-dlp', args, EXEC_OPTIONS)
+    stdout = result.stdout
+  } catch (error) {
+    const stderr =
+      error instanceof Error && 'stderr' in error ? String((error as { stderr: unknown }).stderr) : String(error)
+    throw translateError(stderr)
+  }
+
+  const data = JSON.parse(stdout) as {
+    entries?: { id?: string; title?: string; channel?: string; uploader?: string; duration?: number; live_status?: string }[]
+  }
+
+  return (data.entries ?? [])
+    .filter((entry) => entry.id && YOUTUBE_ID_REGEX.test(entry.id) && entry.title)
+    .filter((entry) => entry.live_status !== 'is_live')
+    // não oferecer o que seria recusado na hora de tocar: busca por termo comum traz
+    // mixes de várias horas, e escolher um deles só devolveria erro
+    .filter((entry) => !entry.duration || entry.duration <= config.ytdlp.maxDurationSec)
+    .map((entry) => ({
+      youtubeId: entry.id as string,
+      title: entry.title as string,
+      channel: entry.channel ?? entry.uploader ?? '',
+      durationSec: Math.floor(entry.duration ?? 0),
+    }))
+    .slice(0, limite)
+}
+
 export async function fetchInfo(youtubeId: string): Promise<YtDlpInfo> {
   if (!YOUTUBE_ID_REGEX.test(youtubeId)) {
     throw new YtDlpError('Link do YouTube inválido.', 'link-invalido')

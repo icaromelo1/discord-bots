@@ -7,11 +7,12 @@ import {
   type VoiceBasedChannel,
 } from 'discord.js'
 import { isGuildAllowed } from '../client'
-import { extractYoutubeId, YtDlpError } from '../../library/ytdlp'
+import { extractYoutubeId, searchYoutube, YtDlpError } from '../../library/ytdlp'
 import { isKnown, listLibrary, resolveTrack } from '../../library/library'
 import { QueueFullError } from '../../queue/queue'
 import type { PlayerController } from '../../player/controller'
 import { buildPanel, type PanelManager } from '../panel'
+import { buildSearchMenu } from '../search-menu'
 
 export interface CommandContext {
   controller: PlayerController
@@ -24,7 +25,10 @@ const tocarCommand = new SlashCommandBuilder()
   .setName('tocar')
   .setDescription('Toca uma música do YouTube na sua call')
   .addStringOption((option) =>
-    option.setName('link').setDescription('Link do YouTube').setRequired(true),
+    option
+      .setName('musica')
+      .setDescription('Link do YouTube ou nome da música')
+      .setRequired(true),
   )
 
 const filaCommand = new SlashCommandBuilder().setName('fila').setDescription('Lista a fila de reprodução')
@@ -108,6 +112,58 @@ async function requireSameCallAsBot(
   return true
 }
 
+export interface EnfileirarResultado {
+  ok: boolean
+  erro?: string
+}
+
+// Compartilhado entre o /tocar com link e a escolha no menu de busca: os dois
+// caminhos precisam das mesmas validações (cooldown, canal divergente) e do mesmo
+// tratamento de erro. `reportar` existe porque cada caminho responde ao Discord de
+// um jeito diferente — um edita a resposta deferida, o outro a mensagem efêmera.
+export async function enfileirarPorId(
+  guildId: string,
+  youtubeId: string,
+  channel: VoiceBasedChannel,
+  userId: string,
+  userName: string,
+  ctx: CommandContext,
+  reportar: (texto: string) => void,
+): Promise<EnfileirarResultado> {
+  const { controller } = ctx
+
+  try {
+    if (!(await isKnown(youtubeId))) {
+      if (!controller.canDownload(guildId, userId)) {
+        return { ok: false, erro: 'Calma — espere alguns segundos entre downloads.' }
+      }
+      controller.markDownload(guildId, userId)
+    }
+
+    const botChannelId = controller.channelId(guildId)
+    if (botChannelId && botChannelId !== channel.id) {
+      return { ok: false, erro: 'Já estou tocando em outro canal desta guild.' }
+    }
+
+    let lastLabel: string | null = null
+    const onProgress = (label: string): void => {
+      if (label === lastLabel) return
+      lastLabel = label
+      reportar(label)
+    }
+
+    const track = await resolveTrack(guildId, youtubeId, userId, userName, onProgress)
+    await controller.enqueue(channel, track, userId, userName)
+    return { ok: true }
+  } catch (error) {
+    if (error instanceof YtDlpError || error instanceof QueueFullError) {
+      return { ok: false, erro: error.message }
+    }
+    console.error('[discord-dj] erro inesperado ao enfileirar:', error)
+    return { ok: false, erro: 'Deu ruim aqui — tenta de novo daqui a pouco.' }
+  }
+}
+
 async function handleTocar(interaction: ChatInputCommandInteraction, guildId: string, ctx: CommandContext): Promise<void> {
   const { controller, panelManager } = ctx
 
@@ -117,55 +173,54 @@ async function handleTocar(interaction: ChatInputCommandInteraction, guildId: st
     return
   }
 
-  await interaction.deferReply()
-
-  const link = interaction.options.getString('link', true)
+  const entrada = interaction.options.getString('musica', true)
   const userId = interaction.user.id
   const userName = interaction.user.username
 
+  let youtubeId: string | null = null
   try {
-    const youtubeId = extractYoutubeId(link)
+    youtubeId = extractYoutubeId(entrada)
+  } catch {
+    youtubeId = null
+  }
 
-    if (!(await isKnown(youtubeId))) {
-      if (!controller.canDownload(guildId, userId)) {
-        await interaction.editReply('Calma — espere alguns segundos entre downloads.')
+  // Não é link: vira busca. Efêmero porque a lista é da pessoa que pediu, e some
+  // assim que ela escolhe.
+  if (!youtubeId) {
+    await interaction.deferReply({ ephemeral: true })
+    try {
+      const resultados = await searchYoutube(entrada, 5)
+      if (resultados.length === 0) {
+        await interaction.editReply(`Não achei nada para "${entrada}".`)
         return
       }
-      controller.markDownload(guildId, userId)
+      await interaction.editReply(buildSearchMenu(entrada, resultados))
+    } catch (error) {
+      if (error instanceof YtDlpError) {
+        await interaction.editReply(error.message)
+        return
+      }
+      console.error('[discord-dj] erro inesperado na busca:', error)
+      await interaction.editReply('Não consegui buscar agora — tenta de novo daqui a pouco.')
     }
-
-    const botChannelId = controller.channelId(guildId)
-    if (botChannelId && botChannelId !== channel.id) {
-      await interaction.editReply('Já estou tocando em outro canal desta guild.')
-      return
-    }
-
-    let lastLabel: string | null = null
-    const onProgress = (label: string): void => {
-      if (label === lastLabel) return
-      lastLabel = label
-      void interaction.editReply(label).catch(() => {})
-    }
-
-    const track = await resolveTrack(guildId, youtubeId, userId, userName, onProgress)
-    await controller.enqueue(channel, track, userId, userName)
-
-    // content vazio de propósito: sem isso a última label de progresso fica grudada
-    // acima do painel para sempre
-    const msg = await interaction.editReply({ content: '', ...buildPanel(controller.state(guildId)) })
-    await panelManager.attach(guildId, msg)
-  } catch (error) {
-    if (error instanceof YtDlpError) {
-      await interaction.editReply(error.message)
-      return
-    }
-    if (error instanceof QueueFullError) {
-      await interaction.editReply(error.message)
-      return
-    }
-    console.error('[discord-dj] erro inesperado em /tocar:', error)
-    await interaction.editReply('Deu ruim aqui — tenta de novo daqui a pouco.')
+    return
   }
+
+  await interaction.deferReply()
+
+  const resultado = await enfileirarPorId(guildId, youtubeId, channel, userId, userName, ctx, (texto) => {
+    void interaction.editReply(texto).catch(() => {})
+  })
+
+  if (!resultado.ok) {
+    await interaction.editReply(resultado.erro ?? 'Não deu certo.')
+    return
+  }
+
+  // content vazio de propósito: sem isso a última label de progresso fica grudada
+  // acima do painel para sempre
+  const msg = await interaction.editReply({ content: '', ...buildPanel(controller.state(guildId)) })
+  await panelManager.attach(guildId, msg)
 }
 
 async function handleFila(interaction: ChatInputCommandInteraction, guildId: string, ctx: CommandContext): Promise<void> {

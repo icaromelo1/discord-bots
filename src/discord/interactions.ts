@@ -1,7 +1,14 @@
-import { Events, type ButtonInteraction, type Client, type GuildMember } from 'discord.js'
+import {
+  Events,
+  type ButtonInteraction,
+  type Client,
+  type GuildMember,
+  type StringSelectMenuInteraction,
+} from 'discord.js'
 import { isGuildAllowed } from './client'
-import { handleCommand, type CommandContext } from './commands'
-import { PANEL_BUTTON_IDS, type PanelManager } from './panel'
+import { enfileirarPorId, handleCommand, type CommandContext } from './commands'
+import { buildPanel, PANEL_BUTTON_IDS, type PanelManager } from './panel'
+import { SEARCH_MENU_ID } from './search-menu'
 import type { PlayerController } from '../player/controller'
 
 async function handleButton(interaction: ButtonInteraction, controller: PlayerController): Promise<void> {
@@ -45,6 +52,50 @@ async function handleButton(interaction: ButtonInteraction, controller: PlayerCo
   }
 }
 
+async function handleSearchPick(interaction: StringSelectMenuInteraction, ctx: CommandContext): Promise<void> {
+  const guildId = interaction.guildId
+  if (!guildId || !isGuildAllowed(guildId)) return
+
+  const member = interaction.member as GuildMember | null
+  const channel = member?.voice?.channel ?? null
+  if (!channel) {
+    await interaction.update({ content: 'Entre numa call primeiro.', embeds: [], components: [] })
+    return
+  }
+
+  const youtubeId = interaction.values[0]
+
+  // update em vez de deferUpdate: troca o menu por "preparando..." na hora, senão a
+  // lista fica clicável enquanto o download acontece e dá pra escolher duas vezes
+  await interaction.update({ content: 'Preparando...', embeds: [], components: [] })
+
+  const resultado = await enfileirarPorId(
+    guildId,
+    youtubeId,
+    channel,
+    interaction.user.id,
+    interaction.user.username,
+    ctx,
+    (texto) => {
+      void interaction.editReply({ content: texto }).catch(() => {})
+    },
+  )
+
+  if (!resultado.ok) {
+    await interaction.editReply({ content: resultado.erro ?? 'Não deu certo.' })
+    return
+  }
+
+  await interaction.editReply({ content: 'Adicionado à fila.' })
+
+  // a mensagem da busca é efêmera e ninguém mais a vê; o painel precisa ser público
+  const painel = await interaction.followUp({
+    ...buildPanel(ctx.controller.state(guildId)),
+    ephemeral: false,
+  })
+  await ctx.panelManager.attach(guildId, painel)
+}
+
 export function registerInteractionHandlers(
   client: Client,
   controller: PlayerController,
@@ -60,6 +111,10 @@ export function registerInteractionHandlers(
       }
       if (interaction.isButton()) {
         await handleButton(interaction, controller)
+        return
+      }
+      if (interaction.isStringSelectMenu() && interaction.customId === SEARCH_MENU_ID) {
+        await handleSearchPick(interaction, ctx)
         return
       }
     } catch (error) {
