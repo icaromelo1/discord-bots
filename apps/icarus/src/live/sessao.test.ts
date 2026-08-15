@@ -7,6 +7,8 @@ vi.mock('@google/genai', () => ({
     return { live: { connect: connectMock } }
   }),
   Modality: { AUDIO: 'AUDIO' },
+  // ferramentas.ts usa Type para declarar o schema das funções
+  Type: { OBJECT: 'OBJECT', STRING: 'STRING' },
 }))
 
 const ENV_ORIGINAL = { ...process.env }

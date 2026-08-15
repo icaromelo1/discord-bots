@@ -1,5 +1,15 @@
 import type { VoiceBasedChannel } from 'discord.js'
-import type { VoiceManager } from '@bots/shared'
+import {
+  extractYoutubeId,
+  resolveTrack,
+  searchYoutube,
+  type PlayerController,
+  type VoiceManager,
+} from '@bots/shared'
+
+function ehLink(entrada: string): boolean {
+  return /youtu\.?be|youtube\.com/i.test(entrada)
+}
 import { config } from './config'
 import { Ears, type TrechoDeFala } from './ears/ears'
 import { Mixer } from './ears/mixer'
@@ -8,6 +18,8 @@ import { Ducking } from './mouth/ducking'
 import { SessaoLive, CotaEstouradaError, ModeloIndisponivelError } from './live/sessao'
 import { WakeDetector } from './wake/wake'
 import { montarContexto } from './brain/contexto'
+import { buscar } from './memory/busca'
+import type { ResultadoFerramenta } from './live/ferramentas'
 import { carregarConhecimento, carregarPersona } from './brain/persona'
 import { salvarFala } from './memory/repositorio'
 import { FilaDeTranscricao } from './memory/fila'
@@ -33,8 +45,11 @@ export class Conversa {
   private ultimoFalante: string | null = null
   private readonly nomes = new Map<string, string>()
 
+  private canalDeVoz: VoiceBasedChannel | null = null
+
   constructor(
     private readonly voice: VoiceManager,
+    private readonly controller: PlayerController,
     private readonly ears: Ears,
     private readonly mouth: Mouth,
     private readonly wake: WakeDetector,
@@ -65,6 +80,7 @@ export class Conversa {
     // camada compartilhada existe para o bot de música, e escutar não conta como tocar
     this.voice.manterConectado(channel.guildId, true)
     this.ears.escutar(connection, channel.guildId)
+    this.canalDeVoz = channel
     this.atual = { guildId: channel.guildId, channelId: channel.id }
     this.nomes.clear()
     for (const [id, nome] of nomes) this.nomes.set(id, nome)
@@ -76,6 +92,7 @@ export class Conversa {
     this.ears.parar(guildId)
     this.voice.leave(guildId)
     this.atual = null
+    this.canalDeVoz = null
   }
 
   private async aoOuvirFala(trecho: TrechoDeFala): Promise<void> {
@@ -141,6 +158,7 @@ export class Conversa {
           this.sessao = null
           this.ultimoFalante = null
         },
+        executarFerramenta: (nome, args) => this.executarFerramenta(guildId, nome, args),
       })
       this.ultimoFalante = trecho.userId
       this.sessao.marcarFalante(nome)
@@ -154,6 +172,80 @@ export class Conversa {
       }
       console.error('[icarus] falha ao abrir sessão:', error)
       this.avisar(guildId, 'Não consegui te ouvir agora — tenta de novo daqui a pouco.')
+    }
+  }
+
+  /**
+   * Executa o que o modelo pediu. As ações vão para a MESMA camada que o /tocar usa —
+   * não existe caminho paralelo: pedir por voz e pedir por comando acabam no mesmo lugar.
+   */
+  private async executarFerramenta(
+    guildId: string,
+    nome: string,
+    args: Record<string, unknown>,
+  ): Promise<ResultadoFerramenta> {
+    const canal = this.canalDeVoz
+    const estado = this.controller.state(guildId)
+
+    switch (nome) {
+      case 'tocar': {
+        if (!canal) return { ok: false, resumo: 'Não estou numa call.' }
+        const busca = String(args.busca ?? '').trim()
+        if (!busca) return { ok: false, resumo: 'Não entendi qual música.' }
+        return this.tocarPorBusca(guildId, canal, busca)
+      }
+      case 'pular':
+        if (!estado.current) return { ok: false, resumo: 'Não tem nada tocando.' }
+        await this.controller.skip(guildId)
+        return { ok: true, resumo: 'Pulei para a próxima.' }
+      case 'pausar': {
+        const pausou = estado.paused ? this.controller.resume(guildId) : this.controller.pause(guildId)
+        if (!pausou) return { ok: false, resumo: 'Não tem nada tocando.' }
+        return { ok: true, resumo: estado.paused ? 'Retomei.' : 'Pausei.' }
+      }
+      case 'parar':
+        this.controller.stop(guildId)
+        return { ok: true, resumo: 'Parei e limpei a fila.' }
+      case 'ver_fila': {
+        if (!estado.current) return { ok: true, resumo: 'A fila está vazia.' }
+        const proximas = estado.items.slice(0, 5).map((item) => item.title)
+        return {
+          ok: true,
+          resumo: `Tocando: ${estado.current.title}.` +
+            (proximas.length > 0 ? ` Depois: ${proximas.join('; ')}.` : ' Nada depois.'),
+        }
+      }
+      case 'lembrar': {
+        const assunto = String(args.assunto ?? '').trim()
+        const trechos = await buscar(guildId, assunto, { limite: 5 })
+        if (trechos.length === 0) return { ok: true, resumo: 'Não achei nada sobre isso na memória.' }
+        return {
+          ok: true,
+          resumo: trechos
+            .map((t) => `${t.autores.join(' e ') || 'alguém'}: ${t.texto}`)
+            .join(' | '),
+        }
+      }
+      default:
+        return { ok: false, resumo: 'Não conheço essa ação.' }
+    }
+  }
+
+  private async tocarPorBusca(
+    guildId: string,
+    canal: VoiceBasedChannel,
+    busca: string,
+  ): Promise<ResultadoFerramenta> {
+    try {
+      const youtubeId = ehLink(busca) ? extractYoutubeId(busca) : (await searchYoutube(busca, 1))[0]?.youtubeId
+      if (!youtubeId) return { ok: false, resumo: `Não achei nada para "${busca}".` }
+
+      const track = await resolveTrack(guildId, youtubeId, 'icarus', 'Icarus')
+      await this.controller.enqueue(canal, track, 'icarus', 'Icarus')
+      return { ok: true, resumo: `Coloquei "${track.title}" para tocar.` }
+    } catch (erro) {
+      const mensagem = erro instanceof Error ? erro.message : 'Não deu certo.'
+      return { ok: false, resumo: mensagem }
     }
   }
 

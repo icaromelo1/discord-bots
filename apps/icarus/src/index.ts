@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   const wake = new WakeDetector(transcritorWake, config.voz.wakeWord)
 
   const canaisDeAviso = new Map<string, TextBasedChannel>()
-  const conversa = new Conversa(voice, ears, mouth, wake, fila, ducking, (guildId, texto) => {
+  const conversa = new Conversa(voice, controller, ears, mouth, wake, fila, ducking, (guildId, texto) => {
     const canal = canaisDeAviso.get(guildId)
     if (canal?.isSendable()) void canal.send(texto).catch(() => {})
   })

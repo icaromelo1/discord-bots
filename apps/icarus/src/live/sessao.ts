@@ -1,5 +1,6 @@
-import { GoogleGenAI, Modality, type LiveServerMessage, type Session } from '@google/genai'
+import { type FunctionResponse, GoogleGenAI, Modality, type LiveServerMessage, type Session } from '@google/genai'
 import { config } from '../config'
+import { declaracoesDeFerramentas, type ExecutorDeFerramenta } from './ferramentas'
 
 export type EstadoSessao = 'fechada' | 'abrindo' | 'aberta' | 'erro'
 
@@ -9,6 +10,8 @@ export interface SessaoOpcoes {
   onAudio: (pcm24kMono: Buffer) => void
   onTranscricao: (quem: 'usuario' | 'bot', texto: string) => void
   onFechada: (motivo: string) => void
+  /** Executa uma ferramenta pedida pelo modelo. Sem isto ele só conversa. */
+  executarFerramenta?: ExecutorDeFerramenta
 }
 
 export class CotaEstouradaError extends Error {}
@@ -79,6 +82,8 @@ export class SessaoLive {
             },
           },
           outputAudioTranscription: {},
+          inputAudioTranscription: {},
+          tools: opcoes.executarFerramenta ? [{ functionDeclarations: declaracoesDeFerramentas }] : undefined,
         },
         callbacks: {
           onopen: () => {
@@ -110,6 +115,11 @@ export class SessaoLive {
   }
 
   private tratarMensagem(mensagem: LiveServerMessage): void {
+    if (mensagem.toolCall?.functionCalls?.length) {
+      void this.tratarChamadaDeFerramenta(mensagem.toolCall.functionCalls)
+      return
+    }
+
     const conteudo = mensagem.serverContent
     if (!conteudo) return
 
@@ -124,6 +134,34 @@ export class SessaoLive {
 
     const transcricaoBot = conteudo.outputTranscription?.text
     if (transcricaoBot) this.opcoes.onTranscricao('bot', transcricaoBot)
+  }
+
+  private async tratarChamadaDeFerramenta(
+    chamadas: { name?: string; args?: Record<string, unknown>; id?: string }[],
+  ): Promise<void> {
+    const executar = this.opcoes.executarFerramenta
+    if (!executar || !this.session) return
+
+    const respostas: FunctionResponse[] = []
+    for (const chamada of chamadas) {
+      if (!chamada.name) continue
+      let resultado
+      try {
+        resultado = await executar(chamada.name, chamada.args ?? {})
+      } catch (erro) {
+        // falha de ferramenta vira resposta, não exceção: o modelo precisa saber que
+        // não deu certo para poder avisar quem pediu, em vez de a sessão morrer
+        console.error(`${config.gemini.model} ferramenta ${chamada.name} falhou:`, erro)
+        resultado = { ok: false, resumo: 'A ação falhou por um erro interno.' }
+      }
+      respostas.push({
+        id: chamada.id,
+        name: chamada.name,
+        response: { ok: resultado.ok, resumo: resultado.resumo },
+      })
+    }
+
+    if (respostas.length > 0) this.session.sendToolResponse({ functionResponses: respostas })
   }
 
   enviarAudio(pcm16kMono: Buffer): void {
