@@ -165,6 +165,27 @@ export class PlayerController {
     this.prefetches.delete(guildId)
   }
 
+  // Reordenar pode trocar quem é a próxima faixa. O prefetch em curso não é
+  // cancelado — o arquivo que ele baixa continua útil, só toca mais tarde —, mas
+  // pedimos um novo assim que ele terminar, para a nova próxima chegar adiantada.
+  moverNaFila(guildId: string, from: number, to: number): boolean {
+    const moveu = this.queue.move(guildId, from, to)
+    if (moveu) {
+      this.emit(guildId)
+      this.prefetchNext(guildId)
+    }
+    return moveu
+  }
+
+  removerDaFila(guildId: string, index: number): QueueItem | null {
+    const removido = this.queue.remove(guildId, index)
+    if (removido) {
+      this.emit(guildId)
+      this.prefetchNext(guildId)
+    }
+    return removido
+  }
+
   async skip(guildId: string): Promise<void> {
     await this.advance(guildId)
   }

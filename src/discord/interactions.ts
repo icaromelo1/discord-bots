@@ -8,6 +8,9 @@ import {
 import { isGuildAllowed } from './client'
 import { enfileirarPorId, handleCommand, type CommandContext } from './commands'
 import { buildPanel, PANEL_BUTTON_IDS, type PanelManager } from './panel'
+import { buildLibraryMenu, entradaParaItem, LIBRARY_MENU_ID } from './library-menu'
+import { buildQueuePanel, QUEUE_IDS, SelecaoFila } from './queue-panel'
+import { listLibrary } from '../library/library'
 import { SEARCH_MENU_ID } from './search-menu'
 import type { PlayerController } from '../player/controller'
 
@@ -50,6 +53,123 @@ async function handleButton(interaction: ButtonInteraction, controller: PlayerCo
     default:
       break
   }
+}
+
+// Biblioteca: a faixa já está baixada, então enfileira na hora — e o menu CONTINUA
+// aberto, para dar pra montar a fila clicando várias vezes seguidas.
+async function handleLibraryPick(interaction: StringSelectMenuInteraction, ctx: CommandContext): Promise<void> {
+  const guildId = interaction.guildId
+  if (!guildId || !isGuildAllowed(guildId)) return
+
+  const member = interaction.member as GuildMember | null
+  const channel = member?.voice?.channel ?? null
+  if (!channel) {
+    await interaction.update({ content: 'Entre numa call primeiro.', embeds: [], components: [] })
+    return
+  }
+
+  const youtubeId = interaction.values[0]
+  await interaction.deferUpdate()
+
+  // a busca é recuperada do próprio título do embed: sem isso, adicionar uma faixa
+  // recarregaria a biblioteca inteira e o filtro que a pessoa digitou sumiria
+  const busca = extrairBusca(interaction.message.embeds[0]?.title ?? '')
+  const entradas = await listLibrary(guildId, busca ?? undefined)
+  const entrada = entradas.find((item) => item.youtubeId === youtubeId)
+  if (!entrada) {
+    await interaction.editReply({ content: 'Essa faixa não está mais na biblioteca.' })
+    return
+  }
+
+  try {
+    await ctx.controller.enqueueMany(channel, [
+      entradaParaItem(entrada, interaction.user.id, interaction.user.username),
+    ])
+  } catch (error) {
+    console.error('[discord-dj] falha ao enfileirar da biblioteca:', error)
+    await interaction.editReply({ content: 'Não deu pra adicionar essa faixa agora.' })
+    return
+  }
+
+  const jaAdicionadas = contarAdicionadas(interaction.message.embeds[0]?.description ?? '') + 1
+  await interaction.editReply(buildLibraryMenu(entradas, busca, jaAdicionadas))
+}
+
+// O contador vive no próprio embed em vez de num Map na memória: assim ele sobrevive
+// a restart do container e não precisa ser limpo quando a mensagem some.
+function contarAdicionadas(descricao: string): number {
+  const match = descricao.match(/✓ (\d+) adicionad/)
+  return match ? Number.parseInt(match[1], 10) : 0
+}
+
+function extrairBusca(titulo: string): string | null {
+  const match = titulo.match(/^Biblioteca — "(.+)"$/)
+  return match ? match[1] : null
+}
+
+async function handleQueueInteraction(
+  interaction: StringSelectMenuInteraction | ButtonInteraction,
+  ctx: CommandContext,
+): Promise<void> {
+  const guildId = interaction.guildId
+  if (!guildId || !isGuildAllowed(guildId)) return
+
+  const member = interaction.member as GuildMember | null
+  const botChannelId = ctx.controller.channelId(guildId)
+  // sem o !botChannelId a comparação null !== null passaria: bot fora da call e
+  // pessoa fora da call dariam "mesma call"
+  if (!botChannelId || member?.voice?.channelId !== botChannelId) {
+    await interaction.reply({
+      content: 'Entre na mesma call que o bot para mexer na fila.',
+      ephemeral: true,
+    })
+    return
+  }
+
+  const userId = interaction.user.id
+
+  if (interaction.isStringSelectMenu()) {
+    ctx.selecaoFila.set(guildId, userId, interaction.values[0])
+    await interaction.update(buildQueuePanel(ctx.controller.state(guildId), interaction.values[0]))
+    return
+  }
+
+  const selecionado = ctx.selecaoFila.get(guildId, userId)
+  if (!selecionado) {
+    await interaction.reply({ content: 'Escolha uma faixa no menu primeiro.', ephemeral: true })
+    return
+  }
+
+  // o índice é recalculado no momento do clique: a fila pode ter andado desde a
+  // seleção, e um índice guardado apontaria para a música errada
+  const itens = ctx.controller.state(guildId).items
+  const indice = itens.findIndex((item) => item.youtubeId === selecionado)
+  if (indice === -1) {
+    ctx.selecaoFila.clear(guildId, userId)
+    await interaction.update(buildQueuePanel(ctx.controller.state(guildId), null))
+    return
+  }
+
+  switch (interaction.customId) {
+    case QUEUE_IDS.playNext:
+      ctx.controller.moverNaFila(guildId, indice, 0)
+      break
+    case QUEUE_IDS.up:
+      ctx.controller.moverNaFila(guildId, indice, indice - 1)
+      break
+    case QUEUE_IDS.down:
+      ctx.controller.moverNaFila(guildId, indice, indice + 1)
+      break
+    case QUEUE_IDS.remove:
+      ctx.controller.removerDaFila(guildId, indice)
+      ctx.selecaoFila.clear(guildId, userId)
+      break
+    default:
+      break
+  }
+
+  const aindaSelecionado = interaction.customId === QUEUE_IDS.remove ? null : selecionado
+  await interaction.update(buildQueuePanel(ctx.controller.state(guildId), aindaSelecionado))
 }
 
 async function handleSearchPick(interaction: StringSelectMenuInteraction, ctx: CommandContext): Promise<void> {
@@ -101,12 +221,16 @@ export function registerInteractionHandlers(
   controller: PlayerController,
   panelManager: PanelManager,
 ): void {
-  const ctx: CommandContext = { controller, panelManager }
+  const ctx: CommandContext = { controller, panelManager, selecaoFila: new SelecaoFila() }
 
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
       if (interaction.isChatInputCommand()) {
         await handleCommand(interaction, ctx)
+        return
+      }
+      if (interaction.isButton() && interaction.customId.startsWith('dj:q:')) {
+        await handleQueueInteraction(interaction, ctx)
         return
       }
       if (interaction.isButton()) {
@@ -115,6 +239,14 @@ export function registerInteractionHandlers(
       }
       if (interaction.isStringSelectMenu() && interaction.customId === SEARCH_MENU_ID) {
         await handleSearchPick(interaction, ctx)
+        return
+      }
+      if (interaction.isStringSelectMenu() && interaction.customId === LIBRARY_MENU_ID) {
+        await handleLibraryPick(interaction, ctx)
+        return
+      }
+      if (interaction.isStringSelectMenu() && interaction.customId === QUEUE_IDS.select) {
+        await handleQueueInteraction(interaction, ctx)
         return
       }
     } catch (error) {

@@ -1,5 +1,4 @@
 import {
-  EmbedBuilder,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
   type GuildMember,
@@ -7,19 +6,22 @@ import {
   type VoiceBasedChannel,
 } from 'discord.js'
 import { isGuildAllowed } from '../client'
-import { extractYoutubeId, searchYoutube, YtDlpError } from '../../library/ytdlp'
+import { extractPlaylistId, extractYoutubeId, searchYoutube, YtDlpError } from '../../library/ytdlp'
 import { isKnown, listLibrary, resolveTrack } from '../../library/library'
 import { QueueFullError } from '../../queue/queue'
 import type { PlayerController } from '../../player/controller'
 import { buildPanel, type PanelManager } from '../panel'
 import { buildSearchMenu } from '../search-menu'
+import { buildLibraryMenu } from '../library-menu'
+import { buildQueuePanel, SelecaoFila } from '../queue-panel'
+import { handlePlaylist } from '../playlist'
 
 export interface CommandContext {
   controller: PlayerController
   panelManager: PanelManager
+  selecaoFila: SelecaoFila
 }
 
-const EMBED_COLOR = 0x5865f2
 
 const tocarCommand = new SlashCommandBuilder()
   .setName('tocar')
@@ -62,18 +64,6 @@ export const commandData: RESTPostAPIApplicationCommandsJSONBody[] = [
   bibliotecaCommand,
 ].map((builder) => builder.toJSON())
 
-function formatDuration(totalSec: number): string {
-  const seconds = Math.max(0, Math.floor(totalSec))
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
-  const paddedSecs = String(secs).padStart(2, '0')
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${paddedSecs}`
-  }
-  return `${minutes}:${paddedSecs}`
-}
 
 async function guardGuild(interaction: ChatInputCommandInteraction): Promise<string | null> {
   const guildId = interaction.guildId
@@ -177,6 +167,19 @@ async function handleTocar(interaction: ChatInputCommandInteraction, guildId: st
   const userId = interaction.user.id
   const userName = interaction.user.username
 
+  // playlist antes de tudo: extractYoutubeId ignora o &list= de propósito, então sem
+  // esta checagem um link de playlist tocaria só o vídeo que veio junto
+  if (extractPlaylistId(entrada)) {
+    await interaction.deferReply()
+    const resultado = await handlePlaylist(interaction, channel, entrada, controller)
+    await interaction.editReply(resultado.mensagem)
+    if (resultado.ok) {
+      const painel = await interaction.followUp({ ...buildPanel(controller.state(guildId)), ephemeral: false })
+      await panelManager.attach(guildId, painel)
+    }
+    return
+  }
+
   let youtubeId: string | null = null
   try {
     youtubeId = extractYoutubeId(entrada)
@@ -224,23 +227,8 @@ async function handleTocar(interaction: ChatInputCommandInteraction, guildId: st
 }
 
 async function handleFila(interaction: ChatInputCommandInteraction, guildId: string, ctx: CommandContext): Promise<void> {
-  const state = ctx.controller.state(guildId)
-  const embed = new EmbedBuilder().setColor(EMBED_COLOR).setTitle('Fila')
-
-  if (!state.current && state.items.length === 0) {
-    embed.setDescription('Fila vazia.')
-  } else {
-    const lines: string[] = []
-    if (state.current) {
-      lines.push(`Tocando agora: **${state.current.title}** — pedido por ${state.current.addedByName}`)
-    }
-    state.items.forEach((item, index) => {
-      lines.push(`${index + 1}. **${item.title}** (${formatDuration(item.durationSec)}) — pedido por ${item.addedByName}`)
-    })
-    embed.setDescription(lines.join('\n'))
-  }
-
-  await interaction.reply({ embeds: [embed] })
+  const selecionado = ctx.selecaoFila.get(guildId, interaction.user.id)
+  await interaction.reply({ ...buildQueuePanel(ctx.controller.state(guildId), selecionado), ephemeral: true })
 }
 
 async function handlePular(interaction: ChatInputCommandInteraction, guildId: string, ctx: CommandContext): Promise<void> {
@@ -277,18 +265,9 @@ async function handleSair(interaction: ChatInputCommandInteraction, guildId: str
 }
 
 async function handleBiblioteca(interaction: ChatInputCommandInteraction, guildId: string): Promise<void> {
-  const busca = interaction.options.getString('busca') ?? undefined
-  const entries = await listLibrary(guildId, busca)
-
-  const embed = new EmbedBuilder().setColor(EMBED_COLOR).setTitle('Biblioteca')
-
-  if (entries.length === 0) {
-    embed.setDescription('Esta guild ainda não tem nada na biblioteca.')
-  } else {
-    embed.setDescription(entries.map((entry) => `**${entry.title}** (${formatDuration(entry.durationSec)})`).join('\n'))
-  }
-
-  await interaction.reply({ embeds: [embed] })
+  const busca = interaction.options.getString('busca') ?? null
+  const entries = await listLibrary(guildId, busca ?? undefined)
+  await interaction.reply({ ...buildLibraryMenu(entries, busca, 0), ephemeral: true })
 }
 
 export async function handleCommand(interaction: ChatInputCommandInteraction, ctx: CommandContext): Promise<void> {
