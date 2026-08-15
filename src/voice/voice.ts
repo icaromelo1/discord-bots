@@ -74,7 +74,9 @@ export class VoiceManager {
 
     this.clearIdleTimer(state)
 
-    const resource = createAudioResource(filePath)
+    // inlineVolume aqui e não depois: sem ele o recurso não tem controle de volume, e
+    // abaixar a música durante uma fala exigiria recriar o recurso no meio da faixa
+    const resource = createAudioResource(filePath, { inlineVolume: true })
     state.player.play(resource)
   }
 
