@@ -1,0 +1,85 @@
+import 'dotenv/config'
+import type { SharedConfig } from '@bots/shared'
+
+function required(name: string): string {
+  const value = process.env[name]
+  if (!value) throw new Error(`Variável de ambiente obrigatória ausente: ${name}`)
+  return value
+}
+
+function int(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) throw new Error(`Variável ${name} não é um número: ${raw}`)
+  return parsed
+}
+
+function list(name: string): string[] {
+  return (process.env[name] || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+export const config = {
+  database: {
+    url: required('DATABASE_URL'),
+    schema: process.env.DATABASE_SCHEMA || 'icarus',
+  },
+  voz: {
+    /** Palavra de ativação, minúscula e sem acento. */
+    wakeWord: (process.env.WAKE_WORD || 'icarus').toLowerCase(),
+    /** Janela de áudio que o detector examina, em ms. */
+    wakeBufferMs: int('WAKE_BUFFER_MS', 3_000),
+    /** Silêncio que encerra a sessão de conversa. */
+    sessaoSilencioMs: int('SESSAO_SILENCIO_MS', 30_000),
+  },
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY || null,
+    // preview: pode mudar ou sumir sem aviso, por isso vive em env
+    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025',
+    voz: process.env.GEMINI_VOICE || 'Puck',
+    idioma: process.env.GEMINI_LANGUAGE || 'pt-BR',
+  },
+  ducking: {
+    /** URL do endpoint de ducking do DJ. Vazio desliga o ducking. */
+    djUrl: process.env.DJ_DUCKING_URL || null,
+    volumeAoFalar: Number(process.env.DUCKING_VOLUME || '0.25'),
+  },
+  memoria: {
+    /** Caminho do binário do whisper.cpp; vazio desliga a transcrição de ambiente. */
+    whisperBin: process.env.WHISPER_BIN || null,
+    whisperModel: process.env.WHISPER_MODEL || null,
+    /** Tamanho do trecho, em palavras, para gerar embedding. */
+    tamanhoTrecho: int('TAMANHO_TRECHO', 150),
+  },
+}
+
+export function buildSharedConfig(): SharedConfig {
+  return {
+    discord: {
+      token: required('DISCORD_TOKEN'),
+      clientId: required('CLIENT_ID'),
+      guildIds: list('GUILD_IDS'),
+      registerGlobal: process.env.REGISTER_GLOBAL === 'true',
+    },
+    library: {
+      driveRemote: process.env.DRIVE_REMOTE || 'gdrive:icarus-music',
+      cacheDir: process.env.MUSIC_CACHE_DIR || './music-cache',
+      rcloneConfigPath: process.env.RCLONE_CONFIG_PATH || null,
+      cookiesFile: process.env.COOKIES_FILE || null,
+    },
+    ytdlp: {
+      maxDurationSec: int('MAX_DURATION_SEC', 1200),
+      playerClients: process.env.PLAYER_CLIENTS || 'web,mweb,tv',
+      potProviderUrl: process.env.POT_PROVIDER_URL || null,
+    },
+    player: {
+      idleTimeoutMs: int('IDLE_TIMEOUT_MS', 120_000),
+      maxQueue: int('MAX_QUEUE', 200),
+      downloadCooldownMs: int('DOWNLOAD_COOLDOWN_MS', 5_000),
+    },
+    logPrefix: '[icarus]',
+  }
+}

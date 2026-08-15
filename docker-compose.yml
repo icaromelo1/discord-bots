@@ -20,6 +20,21 @@ services:
     networks:
       - data
 
+  icarus:
+    build:
+      context: .
+      dockerfile: apps/icarus/Dockerfile
+    image: discord-bots-icarus:latest
+    container_name: icarus
+    restart: unless-stopped
+    env_file: apps/icarus/.env
+    volumes:
+      - ./apps/icarus/music-cache:/app/music-cache
+      - /home/ubuntu/.config/rclone:/home/node/.config/rclone
+      - /home/ubuntu/projects/kairos-api/cookies:/app/cookies:ro
+    networks:
+      - data
+
 networks:
   data:
     external: true
