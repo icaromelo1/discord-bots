@@ -87,6 +87,7 @@ export class WhisperCppTranscritor implements Transcritor {
   constructor(
     private readonly binPath: string | null,
     private readonly modelPath: string | null,
+    private readonly prompt = 'Icarus',
   ) {}
 
   disponivel(): boolean {
@@ -121,6 +122,12 @@ export class WhisperCppTranscritor implements Transcritor {
           '--suppress-nst',
           '--no-speech-thold',
           '0.6',
+          // enviesa o vocabulário: "Icarus" não é palavra do português e o modelo
+          // transcrevia como "e que os", "ícaro", "e carus". Com o nome no prompt
+          // inicial ele passa a reconhecê-lo.
+          '--prompt',
+          this.prompt,
+          '--carry-initial-prompt',
         ],
         EXEC_OPTIONS,
       )

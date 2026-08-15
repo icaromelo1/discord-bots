@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { encontrarPalavra, WakeDetector } from './wake'
+import { encontrarAtivacao, encontrarPalavra, WakeDetector } from './wake'
 import type { Transcritor } from '../memory/transcritor'
 
 describe('encontrarPalavra', () => {
@@ -66,5 +66,34 @@ describe('WakeDetector.examinar', () => {
     const deteccao = await detector.examinar('user-1', Buffer.alloc(0))
 
     expect(deteccao).toBeNull()
+  })
+})
+
+describe('encontrarAtivacao — casos reais capturados na Bayuka', () => {
+  it('reconhece a transcrição real que o Whisper produziu do pedido de música', () => {
+    // fala original: "Icarus coloca pra tocar tal música"
+    const r = encontrarAtivacao('E que os coloca pra tocar é que acabou namoro e não acabou amo.', 'icarus')
+    expect(r.achou).toBe(true)
+    expect(r.resto.toLowerCase()).toContain('coloca pra tocar')
+  })
+
+  it('reconhece as variantes fonéticas mais comuns', () => {
+    for (const variante of ['Icarus', 'Ícaro', 'icaros', 'E carus', 'Ycarus']) {
+      expect(encontrarAtivacao(`${variante}, tá me ouvindo?`, 'icarus').achou).toBe(true)
+    }
+  })
+
+  it('não casa em palavra que apenas contém a variante', () => {
+    expect(encontrarAtivacao('picarus é outra coisa', 'icarus').achou).toBe(false)
+    expect(encontrarAtivacao('icaruso não conta', 'icarus').achou).toBe(false)
+  })
+
+  it('não dispara em conversa comum sem o nome', () => {
+    expect(encontrarAtivacao('então acho que pode ser da academia', 'icarus').achou).toBe(false)
+    expect(encontrarAtivacao('mas o Eduardo pega 500kg no legpress', 'icarus').achou).toBe(false)
+  })
+
+  it('palavra de ativação customizada não usa as variantes de Icarus', () => {
+    expect(encontrarAtivacao('E que os coloca pra tocar', 'jarvis').achou).toBe(false)
   })
 })

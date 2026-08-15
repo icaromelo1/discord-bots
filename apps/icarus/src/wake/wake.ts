@@ -2,6 +2,28 @@ import type { Transcritor } from '../memory/transcritor'
 
 const PALAVRA_PADRAO = 'icarus'
 
+/**
+ * O Whisper erra o nome porque "Icarus" não é palavra do português. Estas são as formas
+ * que ele de fato produziu em uso real na Bayuka, mais variantes próximas. O prompt
+ * inicial passado ao binário reduz muito o problema, mas não elimina — as duas defesas
+ * juntas é que tornam a ativação confiável.
+ *
+ * Cada entrada é comparada em limite de palavra, então "picarus" continua não casando.
+ */
+const VARIANTES = [
+  'icarus',
+  'icaros',
+  'icaro',
+  'icarous',
+  'ycarus',
+  'e carus',
+  'e que os',
+  'ekarus',
+  'aicarus',
+  'i carus',
+  'hicarus',
+]
+
 export interface DeteccaoWake {
   userId: string
   texto: string
@@ -38,6 +60,24 @@ export function encontrarPalavra(texto: string, palavra: string): { achou: boole
   return { achou: true, resto }
 }
 
+/**
+ * Procura a palavra de ativação aceitando as formas que o reconhecedor costuma produzir.
+ * Devolve o resto da frase a partir da variante que casar primeiro no texto.
+ */
+export function encontrarAtivacao(texto: string, palavra: string): { achou: boolean; resto: string } {
+  const candidatas = palavra.toLowerCase() === PALAVRA_PADRAO ? VARIANTES : [palavra]
+
+  let melhor: { achou: boolean; resto: string; posicao: number } | null = null
+  for (const candidata of candidatas) {
+    const resultado = encontrarPalavra(texto, candidata)
+    if (!resultado.achou) continue
+    const posicao = semAcento(texto).toLowerCase().indexOf(semAcento(candidata).toLowerCase())
+    if (!melhor || posicao < melhor.posicao) melhor = { ...resultado, posicao }
+  }
+
+  return melhor ? { achou: true, resto: melhor.resto } : { achou: false, resto: '' }
+}
+
 export class WakeDetector {
   constructor(
     private readonly transcritor: Transcritor,
@@ -49,7 +89,7 @@ export class WakeDetector {
     const texto = await this.transcritor.transcrever(pcm16k)
     if (!texto) return null
 
-    const { achou, resto } = encontrarPalavra(texto, this.palavra)
+    const { achou, resto } = encontrarAtivacao(texto, this.palavra)
     if (!achou) return null
 
     return { userId, texto, textoAposNome: resto }

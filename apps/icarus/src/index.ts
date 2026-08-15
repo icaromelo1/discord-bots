@@ -49,10 +49,10 @@ async function main(): Promise<void> {
   // precisa responder em ~1s (tiny), o da memória pode atrasar minutos e prefere
   // precisão (base). Medido nesta VM: tiny faz 3s de áudio em 0,96s; base em 1,93s.
   const transcritorWake = config.memoria.whisperBin
-    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelWake)
+    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelWake, config.voz.wakeWord)
     : new TranscritorDesligado()
   const transcritorMemoria = config.memoria.whisperBin
-    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelMemoria)
+    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelMemoria, config.voz.wakeWord)
     : new TranscritorDesligado()
   if (!transcritorWake.disponivel()) {
     console.warn('[icarus] Whisper não configurado: memória de ambiente e palavra de ativação desligadas')
