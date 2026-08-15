@@ -36,6 +36,24 @@ services:
     networks:
       - data
 
+  gm:
+    build:
+      context: .
+      dockerfile: apps/gm/Dockerfile
+    image: discord-bots-gm:latest
+    container_name: mc-discord-bot
+    restart: unless-stopped
+    env_file: apps/gm/.env
+    volumes:
+      # diretório, não o arquivo: o Minecraft rotaciona latest.log e troca o inode
+      - /home/ubuntu/projects/minecraft/data/logs:/app/logs:ro
+      - /home/ubuntu/projects/minecraft/data/world/playerdata:/app/playerdata:ro
+    networks:
+      - minecraft_default
+
+
 networks:
   data:
+    external: true
+  minecraft_default:
     external: true

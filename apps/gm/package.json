@@ -1,0 +1,17 @@
+{
+  "name": "@bots/gm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GM — monitoramento do servidor de Minecraft via RCON e logs",
+  "main": "dist/bot.js",
+  "scripts": {
+    "build": "tsc --build",
+    "start": "node dist/bot.js",
+    "dev": "tsx watch src/bot.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2",
+    "rcon-client": "^4.2.3"
+  }
+}
