@@ -182,6 +182,25 @@ Reordenar pode invalidar o prefetch em curso: se a faixa adiantada não é mais 
 próxima, o download atual segue (o arquivo é útil de qualquer forma) e um novo
 prefetch é disparado para a nova próxima.
 
+### Dois ajustes de baixo custo aproveitando que o player será tocado
+
+**`inlineVolume` no recurso de áudio.** Hoje é `createAudioResource(filePath)` sem
+opções, e sem `{ inlineVolume: true }` não existe controle de volume no recurso. O
+design do Icarus prevê ducking (Icarus pede "abaixa que eu vou falar" ao DJ), e sem
+essa opção seria preciso recriar o recurso no meio da música. É um objeto a mais
+agora; é retrabalho depois.
+
+**Não enterrar a suposição de "é sempre um caminho de arquivo".** `voice.play()` vai
+precisar aceitar um `Readable` quando o Icarus tocar os chunks do Gemini. Essa
+mudança não é desta feature, mas nada aqui deve tornar a suposição mais profunda.
+
+### Guarda obrigatória: `markPlayed` com item não resolvido
+
+`markPlayed(guildId, trackId)` assume `trackId` não-nulo. Com `trackId: string | null`,
+um item não resolvido que chegue lá vira `UPDATE … WHERE track_id = NULL`, que não
+casa com linha nenhuma e **falha em silêncio**. `advance()` só chama `markPlayed`
+depois de resolver, e a função ganha uma guarda explícita contra nulo.
+
 ### Novos métodos do QueueManager
 
 ```ts
