@@ -88,6 +88,7 @@ export class WhisperCppTranscritor implements Transcritor {
     private readonly binPath: string | null,
     private readonly modelPath: string | null,
     private readonly prompt = 'Icarus',
+    private readonly threads = 2,
   ) {}
 
   disponivel(): boolean {
@@ -116,6 +117,11 @@ export class WhisperCppTranscritor implements Transcritor {
           wavPath,
           '-l',
           'pt',
+          // menos threads por processo e mais processos em paralelo: a fila roda
+          // vários trechos ao mesmo tempo, então saturar os 4 núcleos com um único
+          // trecho só faria os outros esperarem
+          '-t',
+          String(this.threads),
           // sem estas duas o modelo inventa rótulo de não-fala ("[MÚSICA DE FUNDO]",
           // "Legendas pela comunidade Amara.org") quando recebe ruído ou silêncio —
           // isso envenena a memória e atrapalha a palavra de ativação

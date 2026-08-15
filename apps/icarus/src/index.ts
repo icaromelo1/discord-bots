@@ -50,16 +50,23 @@ async function main(): Promise<void> {
   // precisa responder em ~1s (tiny), o da memória pode atrasar minutos e prefere
   // precisão (base). Medido nesta VM: tiny faz 3s de áudio em 0,96s; base em 1,93s.
   const transcritorWake = config.memoria.whisperBin
-    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelWake, config.voz.wakeWord)
+    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelWake, config.voz.wakeWord, 4)
     : new TranscritorDesligado()
   const transcritorMemoria = config.memoria.whisperBin
-    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelMemoria, config.voz.wakeWord)
+    ? new WhisperCppTranscritor(
+        config.memoria.whisperBin,
+        config.memoria.whisperModelMemoria,
+        config.voz.wakeWord,
+        config.memoria.whisperThreads,
+      )
     : new TranscritorDesligado()
   if (!transcritorWake.disponivel()) {
     console.warn('[icarus] Whisper não configurado: memória de ambiente e palavra de ativação desligadas')
   }
 
-  const fila = new FilaDeTranscricao(transcritorMemoria)
+  // o gatilho usa os 4 núcleos porque precisa responder rápido; a memória usa menos
+  // threads por processo e roda vários em paralelo, porque o que importa lá é vazão
+  const fila = new FilaDeTranscricao(transcritorMemoria, { concorrencia: config.memoria.concorrencia })
   const ears = new Ears((userId) => client.users.cache.get(userId)?.bot ?? false)
   const mouth = new Mouth(voice)
   const ducking = new Ducking(config.ducking.djUrl, config.ducking.volumeAoFalar)

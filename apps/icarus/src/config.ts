@@ -58,6 +58,10 @@ export const config = {
     whisperModelWake: process.env.WHISPER_MODEL_WAKE || null,
     /** Modelo mais preciso, para a memória: pode atrasar minutos. */
     whisperModelMemoria: process.env.WHISPER_MODEL_MEMORIA || null,
+    /** Threads do whisper por processo. */
+    whisperThreads: int('WHISPER_THREADS', 2),
+    /** Quantos trechos transcrevem ao mesmo tempo. */
+    concorrencia: int('TRANSCRICAO_CONCORRENCIA', 3),
     /** Tamanho do trecho, em palavras, para gerar embedding. */
     tamanhoTrecho: int('TAMANHO_TRECHO', 150),
   },
