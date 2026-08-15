@@ -50,7 +50,10 @@ export const config = {
   memoria: {
     /** Caminho do binário do whisper.cpp; vazio desliga a transcrição de ambiente. */
     whisperBin: process.env.WHISPER_BIN || null,
-    whisperModel: process.env.WHISPER_MODEL || null,
+    /** Modelo rápido, para a palavra de ativação: precisa responder em ~1s. */
+    whisperModelWake: process.env.WHISPER_MODEL_WAKE || null,
+    /** Modelo mais preciso, para a memória: pode atrasar minutos. */
+    whisperModelMemoria: process.env.WHISPER_MODEL_MEMORIA || null,
     /** Tamanho do trecho, em palavras, para gerar embedding. */
     tamanhoTrecho: int('TAMANHO_TRECHO', 150),
   },

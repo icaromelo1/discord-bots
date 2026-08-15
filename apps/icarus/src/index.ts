@@ -45,18 +45,24 @@ async function main(): Promise<void> {
 
   const client = createClient()
 
-  const transcritor = config.memoria.whisperBin
-    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModel)
+  // dois transcritores porque as exigências são opostas: o da palavra de ativação
+  // precisa responder em ~1s (tiny), o da memória pode atrasar minutos e prefere
+  // precisão (base). Medido nesta VM: tiny faz 3s de áudio em 0,96s; base em 1,93s.
+  const transcritorWake = config.memoria.whisperBin
+    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelWake)
     : new TranscritorDesligado()
-  if (!transcritor.disponivel()) {
+  const transcritorMemoria = config.memoria.whisperBin
+    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelMemoria)
+    : new TranscritorDesligado()
+  if (!transcritorWake.disponivel()) {
     console.warn('[icarus] Whisper não configurado: memória de ambiente e palavra de ativação desligadas')
   }
 
-  const fila = new FilaDeTranscricao(transcritor)
+  const fila = new FilaDeTranscricao(transcritorMemoria)
   const ears = new Ears((userId) => client.users.cache.get(userId)?.bot ?? false)
   const mouth = new Mouth(voice)
   const ducking = new Ducking(config.ducking.djUrl, config.ducking.volumeAoFalar)
-  const wake = new WakeDetector(transcritor, config.voz.wakeWord)
+  const wake = new WakeDetector(transcritorWake, config.voz.wakeWord)
 
   const canaisDeAviso = new Map<string, TextBasedChannel>()
   const conversa = new Conversa(voice, ears, mouth, wake, fila, ducking, (guildId, texto) => {

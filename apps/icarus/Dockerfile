@@ -11,8 +11,9 @@ WORKDIR /opt
 RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp
 WORKDIR /opt/whisper.cpp
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j"$(nproc)" --config Release
-ARG WHISPER_MODEL=base
-RUN bash ./models/download-ggml-model.sh ${WHISPER_MODEL}
+# dois modelos, dois propósitos: tiny responde a palavra de ativação em ~1s
+# (medido nesta VM), base transcreve a memória com mais precisão e pode demorar
+RUN bash ./models/download-ggml-model.sh tiny && bash ./models/download-ggml-model.sh base
 
 # node:22-bookworm-slim (glibc) — não Alpine: @discordjs/opus e sodium-native
 # publicam binário pré-compilado só para glibc; em musl o npm recompila do
@@ -90,6 +91,7 @@ COPY --from=builder /app/apps/icarus/package.json ./apps/icarus/
 COPY --from=builder /app/apps/icarus/dist ./apps/icarus/dist
 
 COPY --from=whisper /opt/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=whisper /opt/whisper.cpp/models/ggml-tiny.bin /opt/modelos/ggml-tiny.bin
 COPY --from=whisper /opt/whisper.cpp/models/ggml-base.bin /opt/modelos/ggml-base.bin
 
 RUN mkdir -p /app/music-cache /app/cookies \
