@@ -173,15 +173,29 @@ export class Conversa {
     // fora do modo conversa o áudio entra como CONTEXTO e ele não responde; a resposta
     // é destravada quando o nome aparece na transcrição que o próprio Gemini devolve
     this.sessao.enviarAudio(trecho.pcm, { responder: this.emConversa })
+
+    // Fora do modo conversa, ouvir sem responder é o estado NORMAL — contar isso como
+    // "a conversa seguiu sem ele" fazia a sessão fechar a cada duas falas do ambiente.
+    // A sessão vive enquanto ele estiver na call; o que liga e desliga é o modo conversa.
+    if (!this.emConversa) return
+
     this.turnosSemResposta++
     this.reiniciarSilencio()
 
-    // a conversa saiu de cima dele: falaram, ele não respondeu, falaram de novo.
-    // Fechar aqui evita manter a call inteira indo para o Gemini depois que o
-    // assunto mudou — e é bem mais rápido que esperar o silêncio.
     if (this.turnosSemResposta > config.conversa.maxTurnosSemResposta) {
-      void this.encerrarSessao('conversa-seguiu-sem-ele')
+      this.sairDoModoConversa('conversa-seguiu-sem-ele')
     }
+  }
+
+  private sairDoModoConversa(motivo: string): void {
+    if (!this.emConversa) return
+    this.emConversa = false
+    this.turnosSemResposta = 0
+    if (this.conversaTimer) clearTimeout(this.conversaTimer)
+    if (this.silencioTimer) clearTimeout(this.silencioTimer)
+    this.conversaTimer = null
+    this.silencioTimer = null
+    registro.registrar({ tipo: 'sessao', autor: 'Icarus', texto: 'voltou a só ouvir', detalhe: motivo })
   }
 
   /**
@@ -205,10 +219,7 @@ export class Conversa {
     this.emConversa = true
     if (this.conversaTimer) clearTimeout(this.conversaTimer)
     const janela = Math.max(config.voz.sessaoSilencioMs, this.ritmo.janelaMs())
-    this.conversaTimer = setTimeout(() => {
-      this.emConversa = false
-      registro.registrar({ tipo: 'sessao', autor: 'Icarus', texto: 'voltou a só ouvir' })
-    }, janela)
+    this.conversaTimer = setTimeout(() => this.sairDoModoConversa('janela-encerrada'), janela)
   }
 
   private async abrirSessao(guildId: string): Promise<void> {
@@ -306,9 +317,10 @@ export class Conversa {
         }
       }
       case 'encerrar_conversa':
-        // o modelo é o único que entende o CONTEÚDO: ele sabe distinguir "deixa eu
-        // pensar" de "beleza, valeu". O timer e o contador são redes de segurança.
-        void this.encerrarSessao('modelo-encerrou')
+        // sai do modo conversa, mas NÃO fecha a sessão: ele continua ouvindo a call,
+        // que é o ponto do desenho. O modelo é quem entende o conteúdo e sabe
+        // distinguir "deixa eu pensar" de "beleza, valeu".
+        this.sairDoModoConversa('modelo-encerrou')
         return { ok: true, resumo: 'Encerrado.' }
       case 'lembrar': {
         const assunto = String(args.assunto ?? '').trim()
@@ -389,7 +401,7 @@ export class Conversa {
     this.ritmo.registrarFala(Date.now())
     const janela = Math.max(config.voz.sessaoSilencioMs, this.ritmo.janelaMs())
     this.silencioTimer = setTimeout(() => {
-      void this.encerrarSessao(`silencio-${Math.round(janela / 1000)}s`)
+      this.sairDoModoConversa(`silencio-${Math.round(janela / 1000)}s`)
     }, janela)
   }
 
