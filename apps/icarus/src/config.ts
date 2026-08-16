@@ -32,8 +32,12 @@ export const config = {
     wakeWord: (process.env.WAKE_WORD || 'cubo').toLowerCase(),
     /** Janela de áudio que o detector examina, em ms. */
     wakeBufferMs: int('WAKE_BUFFER_MS', 3_000),
-    /** Silêncio que encerra a sessão de conversa. */
-    sessaoSilencioMs: int('SESSAO_SILENCIO_MS', 10_000),
+    /**
+     * Silêncio que encerra o modo conversa DEPOIS de ele já estar falando com alguém.
+     * Generoso de propósito: pausa de dez, quinze segundos é normal entre humanos, e
+     * fechar antes disso faz a resposta seguinte ser gerada e descartada.
+     */
+    sessaoSilencioMs: int('SESSAO_SILENCIO_MS', 35_000),
   },
   conversa: {
     /** Falas seguidas sem resposta do bot antes de encerrar a sessão. */

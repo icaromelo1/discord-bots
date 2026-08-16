@@ -220,6 +220,8 @@ export class Conversa {
     this.emConversa = true
     this.sessao?.silenciar(false)
     if (this.conversaTimer) clearTimeout(this.conversaTimer)
+    // o ritmo pode esticar a janela, nunca encurtá-la: encurtar significa gerar a
+    // resposta e jogar fora, que é pior do que ouvir um pouco a mais
     const janela = Math.max(config.voz.sessaoSilencioMs, this.ritmo.janelaMs())
     this.conversaTimer = setTimeout(() => this.sairDoModoConversa('janela-encerrada'), janela)
   }
