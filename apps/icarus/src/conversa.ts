@@ -44,6 +44,7 @@ export class Conversa {
   private mixer = new Mixer()
   private silencioTimer: NodeJS.Timeout | null = null
   private ultimoFalante: string | null = null
+  private turnosSemResposta = 0
   private readonly nomes = new Map<string, string>()
 
   private canalDeVoz: VoiceBasedChannel | null = null
@@ -146,7 +147,15 @@ export class Conversa {
     }
 
     this.sessao.enviarAudio(trecho.pcm)
+    this.turnosSemResposta++
     this.reiniciarSilencio()
+
+    // a conversa saiu de cima dele: falaram, ele não respondeu, falaram de novo.
+    // Fechar aqui evita manter a call inteira indo para o Gemini depois que o
+    // assunto mudou — e é bem mais rápido que esperar o silêncio.
+    if (this.turnosSemResposta > config.conversa.maxTurnosSemResposta) {
+      void this.encerrarSessao('conversa-seguiu-sem-ele')
+    }
   }
 
   private async abrirSessao(
@@ -175,6 +184,7 @@ export class Conversa {
       })
       registro.registrar({ tipo: 'sessao', autor: nome, texto: 'sessão aberta', detalhe: pergunta })
       this.ultimoFalante = trecho.userId
+      this.turnosSemResposta = 0
       this.sessao.marcarFalante(nome)
       this.sessao.enviarAudio(trecho.pcm)
       this.reiniciarSilencio()
@@ -273,6 +283,8 @@ export class Conversa {
     userIdUsuario: string,
   ): Promise<void> {
     if (!texto.trim()) return
+    // ele respondeu: a conversa ainda é com ele
+    if (quem === 'bot') this.turnosSemResposta = 0
     registro.registrar({
       tipo: 'fala',
       autor: quem === 'bot' ? 'Icarus' : nomeUsuario,
@@ -310,6 +322,7 @@ export class Conversa {
     const sessao = this.sessao
     this.sessao = null
     this.ultimoFalante = null
+    this.turnosSemResposta = 0
     this.mixer.limpar()
     if (sessao) await sessao.fechar(motivo)
   }

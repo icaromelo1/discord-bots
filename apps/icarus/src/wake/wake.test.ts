@@ -112,3 +112,27 @@ describe('gatilho trocado para "Ícaro" — o Whisper mangava "Icarus" em portug
     expect(encontrarAtivacao('acho que foi da academia mesmo', 'icaro').achou).toBe(false)
   })
 })
+
+
+describe('gatilho "arroz" — palavra do português, que o Whisper acerta', () => {
+  it('reconhece a palavra e devolve o pedido', () => {
+    const r = encontrarAtivacao('Arroz, coloca um som aí', 'arroz')
+    expect(r.achou).toBe(true)
+    expect(r.resto).toBe('coloca um som aí')
+  })
+
+  it('não usa as variantes internas de Ícaro', () => {
+    expect(encontrarAtivacao('E couro, tá aí?', 'arroz').achou).toBe(false)
+  })
+
+  it('não dispara em palavra que apenas contém o gatilho', () => {
+    expect(encontrarAtivacao('arrozal enorme', 'arroz').achou).toBe(false)
+  })
+
+  // risco assumido: "arroz" aparece em conversa comum. O limite de palavra evita o
+  // pior, mas falar de comida vai acordar o bot — é o preço de um gatilho que o
+  // reconhecedor acerta.
+  it('dispara em conversa sobre comida — falso positivo conhecido', () => {
+    expect(encontrarAtivacao('fiz arroz com feijão hoje', 'arroz').achou).toBe(true)
+  })
+})

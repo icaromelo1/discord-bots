@@ -82,6 +82,8 @@ export class SessaoLive {
             },
           },
           outputAudioTranscription: {},
+          // desligada porque quem marca início e fim de fala somos nós: ver enviarAudio
+          realtimeInputConfig: { automaticActivityDetection: { disabled: true } },
           inputAudioTranscription: {},
           tools: opcoes.executarFerramenta ? [{ functionDeclarations: declaracoesDeFerramentas }] : undefined,
         },
@@ -182,15 +184,26 @@ export class SessaoLive {
     if (respostas.length > 0) this.session.sendToolResponse({ functionResponses: respostas })
   }
 
+  /**
+   * Envia uma fala JÁ COMPLETA, marcando início e fim explicitamente.
+   *
+   * A detecção automática do Gemini espera um fluxo contínuo de áudio para perceber que
+   * a pessoa parou de falar. Nós não temos fluxo contínuo: os "ouvidos" entregam trechos
+   * discretos (o stream do Discord fecha após o silêncio) e entre um trecho e outro não
+   * mandamos nada. Sem sinalizar o fim, o modelo recebia a fala e ficava esperando mais —
+   * respondia à primeira e emudecia nas seguintes.
+   */
   enviarAudio(pcm16kMono: Buffer): void {
     if (this.estadoAtual !== 'aberta' || !this.session) return
 
+    this.session.sendRealtimeInput({ activityStart: {} })
     this.session.sendRealtimeInput({
       media: {
         data: pcm16kMono.toString('base64'),
         mimeType: 'audio/pcm;rate=16000',
       },
     })
+    this.session.sendRealtimeInput({ activityEnd: {} })
   }
 
   /** Marcador de quem passou a falar — é isto que permite conhecer os membros. */
