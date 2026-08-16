@@ -169,16 +169,39 @@ export const LABORATORIO = `<!doctype html>
 
   <section class="aba" id="aba-stream">
     <div class="bloco">
-      <h2>Fala-para-fala em tempo real</h2>
-      <p>O modo Stream usa a Live API do Gemini para conversar em tempo real, com áudio entrando e saindo continuamente
-      — não existe um botão "gerar" aqui porque não há um texto de entrada nem um arquivo de saída: é uma sessão de
-      voz aberta. Por isso ele só funciona dentro de uma call do Discord, onde o Icarus está de fato ouvindo e
-      falando com alguém.</p>
-      <p>Comparação conceitual com Piper e Gemini TTS: a latência de resposta tende a ser bem menor, porque não
-      existe um passo separado de "gerar áudio depois de pensar" — mas em troca não dá para escolher a voz nem
-      ajustar velocidade ou estilo, e não dá para testar fora da call, então essa aba não tem player nem histórico,
-      só o estado atual do bot.</p>
+      <h2>Fala-para-fala com a Live API</h2>
+      <p>Piper e Gemini TTS leem o texto que você escreve. Aqui o Icarus responde ao texto, como numa conversa —
+      a voz continua comparável entre as três abas, mas a fala que sai desta é outra, gerada pela resposta dele,
+      não uma leitura do que você digitou.</p>
     </div>
+    <div class="campo">
+      <label for="stream-texto">Texto</label>
+      <textarea id="stream-texto" spellcheck="false">Fala galera, aqui é o Icarus, tô testando minha voz.</textarea>
+      <span class="dica">Cmd/Ctrl+Enter para enviar</span>
+    </div>
+    <div class="linha">
+      <div class="campo">
+        <label for="stream-voz">Voz</label>
+        <select id="stream-voz"><option>carregando…</option></select>
+      </div>
+      <div class="campo">
+        <label for="stream-modelo">Modelo</label>
+        <select id="stream-modelo">
+          <option value="gemini-2.5-flash-native-audio-latest">gemini-2.5-flash-native-audio-latest</option>
+          <option value="gemini-2.5-flash-native-audio-preview-09-2025">gemini-2.5-flash-native-audio-preview-09-2025</option>
+        </select>
+      </div>
+    </div>
+    <div class="campo">
+      <label for="stream-instrucao">Instrução de sistema (opcional)</label>
+      <input type="text" id="stream-instrucao" placeholder="Você é o Icarus. Responda curto e natural.">
+    </div>
+    <button class="acao" id="stream-gerar">Enviar e ouvir</button>
+    <div class="status" id="stream-status"></div>
+    <div id="stream-erro"></div>
+    <h3 class="titulo-secao">Histórico</h3>
+    <div class="historico" id="stream-historico"><div class="vazio">Nenhuma geração ainda.</div></div>
+    <h3 class="titulo-secao">Estado do bot</h3>
     <div class="linha">
       <button class="secundaria" id="stream-atualizar">Atualizar estado</button>
     </div>
@@ -239,8 +262,8 @@ async function carregarVozesPiper() {
   }
 }
 
-async function carregarVozesGemini() {
-  const select = document.getElementById('gemini-voz')
+async function carregarVozesGemini(selectId) {
+  const select = document.getElementById(selectId)
   try {
     const r = await fetch('/api/voz/gemini/vozes')
     const dados = await r.json()
@@ -273,15 +296,24 @@ function inserirHistorico(historicoId, item) {
 
   const div = document.createElement('div')
   div.className = 'item-hist'
+  const tempoHtml =
+    item.primeiroSomMs != null
+      ? '<span>primeiro som: <b>' + formatarMs(item.primeiroSomMs) + '</b></span>' +
+        '<span>total: <b>' + formatarMs(item.tempoMs) + '</b></span>'
+      : '<span>geração: <b>' + formatarMs(item.tempoMs) + '</b></span>'
+  const respondidoHtml = item.respondido
+    ? '<div class="texto-usado">respondeu: ' + item.respondido + '</div>'
+    : ''
   div.innerHTML =
     '<div class="meta">' +
       '<span>motor: <b>' + item.motor + '</b></span>' +
       '<span>voz: <b>' + item.voz + '</b></span>' +
-      '<span>geração: <b>' + formatarMs(item.tempoMs) + '</b></span>' +
+      tempoHtml +
       '<span>duração: <b>' + item.duracaoS.toFixed(1) + 's</b></span>' +
       '<span>tamanho: <b>' + formatarBytes(item.bytes) + '</b></span>' +
     '</div>' +
-    '<div class="texto-usado">' + item.texto + '</div>'
+    '<div class="texto-usado">' + item.texto + '</div>' +
+    respondidoHtml
 
   const audio = document.createElement('audio')
   audio.controls = true
@@ -378,6 +410,78 @@ document.getElementById('gemini-texto').addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') gerarGemini()
 })
 
+const streamBotao = document.getElementById('stream-gerar')
+async function gerarStream() {
+  const texto = document.getElementById('stream-texto').value
+  if (!texto.trim()) return
+  const voz = document.getElementById('stream-voz').value
+  const modelo = document.getElementById('stream-modelo').value
+  const instrucao = document.getElementById('stream-instrucao').value
+
+  mostrarErro('stream-erro', '')
+  const status = document.getElementById('stream-status')
+  streamBotao.disabled = true
+  status.textContent = 'gerando…'
+
+  const inicio = performance.now()
+  try {
+    const r = await fetch('/api/voz/sintetizar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        motor: 'stream',
+        texto,
+        opcoes: { voz, modelo, instrucao: instrucao || undefined },
+      }),
+    })
+
+    if (!r.ok) {
+      let mensagem = 'Erro ' + r.status
+      try {
+        const corpo = await r.json()
+        if (corpo.erro) mensagem = corpo.erro
+      } catch (e) {
+        // resposta sem corpo JSON, mantém a mensagem genérica
+      }
+      throw new Error(mensagem)
+    }
+
+    const textoHeader = r.headers.get('x-icarus-texto')
+    const respondido = textoHeader ? decodeURIComponent(textoHeader) : ''
+    const primeiroSomHeader = r.headers.get('x-icarus-primeiro-audio-ms')
+    const primeiroSomMs = primeiroSomHeader ? Number(primeiroSomHeader) : null
+
+    const blob = await r.blob()
+    const tempoMs = performance.now() - inicio
+    const duracaoS = await duracaoDoAudio(blob)
+    const url = URL.createObjectURL(blob)
+
+    status.textContent =
+      (primeiroSomMs != null ? 'primeiro som ' + formatarMs(primeiroSomMs) + ' · ' : '') +
+      'total ' + formatarMs(tempoMs) + ' · ' + formatarBytes(blob.size)
+    inserirHistorico('stream-historico', {
+      motor: 'stream',
+      voz,
+      texto,
+      respondido,
+      tempoMs,
+      primeiroSomMs,
+      duracaoS,
+      bytes: blob.size,
+      url,
+    })
+  } catch (e) {
+    status.textContent = ''
+    mostrarErro('stream-erro', e.message || String(e))
+  } finally {
+    streamBotao.disabled = false
+  }
+}
+streamBotao.addEventListener('click', gerarStream)
+document.getElementById('stream-texto').addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') gerarStream()
+})
+
 async function atualizarEstadoStream() {
   const el = document.getElementById('stream-estado')
   el.textContent = 'carregando…'
@@ -395,7 +499,8 @@ async function atualizarEstadoStream() {
 document.getElementById('stream-atualizar').addEventListener('click', atualizarEstadoStream)
 
 carregarVozesPiper()
-carregarVozesGemini()
+carregarVozesGemini('gemini-voz')
+carregarVozesGemini('stream-voz')
 atualizarEstadoStream()
 </script>
 </body>

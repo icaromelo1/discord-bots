@@ -4,6 +4,7 @@ import { LABORATORIO } from './laboratorio'
 import { registro } from './registro'
 import { pcmParaWav, sintetizarGemini, VOZES_GEMINI } from '../voz/gemini-tts'
 import { sintetizarPiper, vozesDisponiveis } from '../voz/piper'
+import { sintetizarViaLive } from '../voz/live-tts'
 
 async function corpoJson(req: import('node:http').IncomingMessage): Promise<Record<string, unknown>> {
   const partes: Buffer[] = []
@@ -65,12 +66,31 @@ export function iniciarPainel(porta: number, estado: () => EstadoDoPainel): Serv
           if (!texto) throw new Error('Texto vazio.')
 
           const opcoes = (corpo.opcoes ?? {}) as Record<string, never>
-          const wav =
-            corpo.motor === 'gemini'
-              ? await sintetizarGemini(texto, opcoes).then((a) => pcmParaWav(a.pcm, a.taxaHz))
-              : await sintetizarPiper(texto, opcoes)
 
-          res.writeHead(200, { 'content-type': 'audio/wav', 'content-length': wav.length })
+          let wav: Buffer
+          const extras: Record<string, string> = {}
+
+          if (corpo.motor === 'gemini') {
+            const audio = await sintetizarGemini(texto, opcoes)
+            wav = pcmParaWav(audio.pcm, audio.taxaHz)
+          } else if (corpo.motor === 'stream') {
+            const resposta = await sintetizarViaLive(texto, opcoes)
+            if (resposta.pcm.length === 0) throw new Error('a sessão não devolveu áudio')
+            wav = pcmParaWav(resposta.pcm, resposta.taxaHz)
+            // a Live API RESPONDE ao texto em vez de apenas lê-lo: o que ele disse e a
+            // latência até o primeiro som vão nos cabeçalhos para o painel exibir
+            extras['x-icarus-texto'] = encodeURIComponent(resposta.texto)
+            extras['x-icarus-primeiro-audio-ms'] = String(resposta.primeiroAudioMs)
+          } else {
+            wav = await sintetizarPiper(texto, opcoes)
+          }
+
+          res.writeHead(200, {
+            'content-type': 'audio/wav',
+            'content-length': wav.length,
+            'access-control-expose-headers': 'x-icarus-texto, x-icarus-primeiro-audio-ms',
+            ...extras,
+          })
           res.end(wav)
         } catch (erro) {
           res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
