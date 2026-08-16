@@ -23,6 +23,7 @@ import type { ResultadoFerramenta } from './live/ferramentas'
 import { carregarConhecimento, carregarPersona } from './brain/persona'
 import { salvarFala } from './memory/repositorio'
 import { registro } from './painel/registro'
+import { RitmoDaConversa } from './live/ritmo'
 import { FilaDeTranscricao } from './memory/fila'
 
 export interface ConversaEmCurso {
@@ -45,6 +46,7 @@ export class Conversa {
   private silencioTimer: NodeJS.Timeout | null = null
   private ultimoFalante: string | null = null
   private turnosSemResposta = 0
+  private readonly ritmo = new RitmoDaConversa()
   private readonly nomes = new Map<string, string>()
 
   private canalDeVoz: VoiceBasedChannel | null = null
@@ -241,6 +243,11 @@ export class Conversa {
             (proximas.length > 0 ? ` Depois: ${proximas.join('; ')}.` : ' Nada depois.'),
         }
       }
+      case 'encerrar_conversa':
+        // o modelo é o único que entende o CONTEÚDO: ele sabe distinguir "deixa eu
+        // pensar" de "beleza, valeu". O timer e o contador são redes de segurança.
+        void this.encerrarSessao('modelo-encerrou')
+        return { ok: true, resumo: 'Encerrado.' }
       case 'lembrar': {
         const assunto = String(args.assunto ?? '').trim()
         const trechos = await buscar(guildId, assunto, { limite: 5 })
@@ -307,11 +314,18 @@ export class Conversa {
     }
   }
 
+  /**
+   * A janela vem do ritmo observado na própria sessão, não de um número fixo: um grupo
+   * que emenda as frases não deve esperar tanto quanto um que fala pausado. Enquanto não
+   * há amostras suficientes, cai no piso configurado.
+   */
   private reiniciarSilencio(): void {
     if (this.silencioTimer) clearTimeout(this.silencioTimer)
+    this.ritmo.registrarFala(Date.now())
+    const janela = Math.max(config.voz.sessaoSilencioMs, this.ritmo.janelaMs())
     this.silencioTimer = setTimeout(() => {
-      void this.encerrarSessao('silencio')
-    }, config.voz.sessaoSilencioMs)
+      void this.encerrarSessao(`silencio-${Math.round(janela / 1000)}s`)
+    }, janela)
   }
 
   private async encerrarSessao(motivo: string): Promise<void> {
@@ -323,6 +337,7 @@ export class Conversa {
     this.sessao = null
     this.ultimoFalante = null
     this.turnosSemResposta = 0
+    this.ritmo.limpar()
     this.mixer.limpar()
     if (sessao) await sessao.fechar(motivo)
   }

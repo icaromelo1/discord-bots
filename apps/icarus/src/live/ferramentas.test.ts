@@ -4,7 +4,15 @@ import { declaracoesDeFerramentas } from './ferramentas'
 describe('declarações de ferramentas', () => {
   it('expõe as ações que o modelo precisa para agir, não só conversar', () => {
     const nomes = declaracoesDeFerramentas.map((d) => d.name)
-    expect(nomes).toEqual(['tocar', 'pular', 'pausar', 'parar', 'ver_fila', 'lembrar'])
+    expect(nomes).toEqual([
+      'tocar',
+      'pular',
+      'pausar',
+      'parar',
+      'ver_fila',
+      'encerrar_conversa',
+      'lembrar',
+    ])
   })
 
   it('tocar exige o termo de busca — sem ele o modelo chamaria a ação vazia', () => {
@@ -24,8 +32,15 @@ describe('declarações de ferramentas', () => {
     }
   })
 
+  it('o modelo consegue encerrar a conversa — ele é quem entende que ela acabou', () => {
+    const encerrar = declaracoesDeFerramentas.find((d) => d.name === 'encerrar_conversa')
+    expect(encerrar).toBeDefined()
+    // a descrição precisa distinguir pausa de fim, senão ele encerra no meio da frase
+    expect(encerrar!.description).toMatch(/pausa/i)
+  })
+
   it('ações sem argumento declaram objeto vazio, não undefined', () => {
-    for (const nome of ['pular', 'pausar', 'parar', 'ver_fila']) {
+    for (const nome of ['pular', 'pausar', 'parar', 'ver_fila', 'encerrar_conversa']) {
       const d = declaracoesDeFerramentas.find((x) => x.name === nome)
       expect(d?.parameters?.properties).toEqual({})
     }

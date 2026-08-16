@@ -45,6 +45,15 @@ export const declaracoesDeFerramentas: FunctionDeclaration[] = [
     parameters: { type: Type.OBJECT, properties: {} },
   },
   {
+    name: 'encerrar_conversa',
+    description:
+      'Encerra a conversa por voz com você. Chame quando a conversa claramente deixou de ' +
+      'ser com você — as pessoas voltaram a falar entre si, se despediram de você, ou ' +
+      'pediram para você parar. NÃO chame durante uma pausa em que ainda estão pensando ' +
+      'ou falando com você.',
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
     name: 'lembrar',
     description:
       'Busca na memória o que já foi conversado nesta call em outras ocasiões. ' +
