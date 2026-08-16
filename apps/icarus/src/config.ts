@@ -55,6 +55,12 @@ export const config = {
     djUrl: process.env.DJ_DUCKING_URL || null,
     volumeAoFalar: Number(process.env.DUCKING_VOLUME || '0.25'),
   },
+  groq: {
+    /** Free tier: 2.000 transcrições/dia, sem cartão. console.groq.com */
+    apiKey: process.env.GROQ_API_KEY || null,
+    modeloAudio: process.env.GROQ_AUDIO_MODEL || 'whisper-large-v3-turbo',
+    modeloTexto: process.env.GROQ_TEXT_MODEL || 'llama-3.3-70b-versatile',
+  },
   tts: {
     /** Binário do piper. Vazio desliga a aba local do laboratório. */
     piperBin: process.env.PIPER_BIN || null,

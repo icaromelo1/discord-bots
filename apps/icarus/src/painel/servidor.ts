@@ -6,6 +6,7 @@ import { instalarChamada } from './chamada'
 import { pcmParaWav, sintetizarGemini, VOZES_GEMINI } from '../voz/gemini-tts'
 import { sintetizarPiper, vozesDisponiveis } from '../voz/piper'
 import { sintetizarViaLive } from '../voz/live-tts'
+import { groqDisponivel } from '../voz/groq'
 
 async function corpoJson(req: import('node:http').IncomingMessage): Promise<Record<string, unknown>> {
   const partes: Buffer[] = []
@@ -50,6 +51,12 @@ export function iniciarPainel(porta: number, estado: () => EstadoDoPainel): Serv
     if (url.pathname === '/api/voz/piper/vozes') {
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
       res.end(JSON.stringify({ vozes: vozesDisponiveis().map(({ id, rotulo }) => ({ id, rotulo })) }))
+      return
+    }
+
+    if (url.pathname === '/api/voz/groq/estado') {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ configurado: groqDisponivel() }))
       return
     }
 

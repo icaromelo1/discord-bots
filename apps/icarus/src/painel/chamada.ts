@@ -5,12 +5,13 @@ import { config } from '../config'
 import { sintetizarGemini } from '../voz/gemini-tts'
 import { sintetizarPiper } from '../voz/piper'
 import { responderComGemini, transcreverComGemini } from '../voz/transcrever-gemini'
+import { responderComGroq, transcreverComGroq } from '../voz/groq'
 import { extrairPcmDeWav, taxaDoWav } from '../voz/wav'
 
-export type Motor = 'piper' | 'gemini' | 'stream'
+export type Motor = 'piper' | 'gemini' | 'stream' | 'groq'
 
 interface Mensagem {
-  tipo: 'iniciar' | 'audio' | 'encerrar'
+  tipo: 'iniciar' | 'audio' | 'encerrar' | 'fim-da-minha-fala'
   motor?: Motor
   voz?: string
   instrucao?: string
@@ -66,6 +67,7 @@ class SessaoDeChamada {
   private readonly historico: { quem: 'pessoa' | 'bot'; texto: string }[] = []
   private live: Session | null = null
   private ocupado = false
+  private falando = false
 
   constructor(private readonly ws: WebSocket) {}
 
@@ -83,6 +85,15 @@ class SessaoDeChamada {
 
     if (msg.tipo === 'iniciar') return this.iniciar(msg)
     if (msg.tipo === 'encerrar') return this.encerrar()
+    // o navegador percebeu o silêncio antes do serviço: fecha o turno agora em vez de
+    // esperar o limiar deles, que custava alguns segundos
+    if (msg.tipo === 'fim-da-minha-fala') {
+      if (this.falando) {
+        this.live?.sendRealtimeInput({ activityEnd: {} })
+        this.falando = false
+      }
+      return
+    }
     if (msg.tipo === 'audio' && msg.dados) {
       const pcm = Buffer.from(msg.dados, 'base64')
       const ms = Math.round((pcm.length / 2 / 16_000) * 1000)
@@ -130,9 +141,19 @@ class SessaoDeChamada {
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         realtimeInputConfig: { automaticActivityDetection: { disabled: true } },
-        // deixa o modelo ignorar o que claramente não é para ele, em vez de responder
-        // "não entendi" a cada ruído captado
-        proactivity: { proactiveAudio: true },
+        // O melhor dos dois mundos, medido: áudio flui CONTINUAMENTE (o modelo já
+        // processa enquanto a pessoa fala) mas quem fecha o turno somos nós, assim que
+        // a detecção do navegador percebe o silêncio.
+        //
+        // Mandar a fala inteira só no fim jogava a duração da frase dentro da latência.
+        // Deixar a detecção automática decidir custava ~3,2s a mais depois do fim da
+        // fala, porque ela espera o próprio limiar. Streaming + fim explícito junta a
+        // vantagem dos dois.
+        //
+        // Cuidado: silêncio digital perfeito (zeros) não é reconhecido como silêncio.
+        //
+        // proactivity: { proactiveAudio: true } TRAVA a conexão neste modelo — a opção
+        // existe na documentação mas a sessão nunca abre. Testado em 16/08/2026.
       },
       callbacks: {
         onmessage: (mensagem: LiveServerMessage) => {
@@ -152,6 +173,11 @@ class SessaoDeChamada {
           const entrada = conteudo.inputTranscription?.text
           if (entrada) this.enviar({ tipo: 'transcricao', quem: 'pessoa', texto: entrada, parcial: true })
 
+          // barge-in: o serviço avisa quando a fala do modelo foi interrompida por
+          // alguém falando por cima. O navegador precisa parar de tocar na hora, senão
+          // continua reproduzindo uma resposta que o modelo já abandonou.
+          if (conteudo.interrupted) this.enviar({ tipo: 'interrompido' })
+
           const saida = conteudo.outputTranscription?.text
           if (saida) this.enviar({ tipo: 'transcricao', quem: 'bot', texto: saida, parcial: true })
 
@@ -169,11 +195,13 @@ class SessaoDeChamada {
   private async aoFalar(pcm16k: Buffer): Promise<void> {
     if (this.motor === 'stream') {
       if (!this.live) return
-      this.live.sendRealtimeInput({ activityStart: {} })
+      if (!this.falando) {
+        this.live.sendRealtimeInput({ activityStart: {} })
+        this.falando = true
+      }
       this.live.sendRealtimeInput({
         media: { data: pcm16k.toString('base64'), mimeType: 'audio/pcm;rate=16000' },
       })
-      this.live.sendRealtimeInput({ activityEnd: {} })
       return
     }
 
@@ -184,13 +212,19 @@ class SessaoDeChamada {
 
     try {
       const t0 = Date.now()
-      const dito = await transcreverComGemini(pcm16k)
+      // o Groq transcreve com idioma FORÇADO em português; o Gemini usa detecção
+      // automática, que já confundiu português com francês
+      const dito =
+        this.motor === 'groq' ? await transcreverComGroq(pcm16k) : await transcreverComGemini(pcm16k)
       if (!dito) return
       const t1 = Date.now()
       this.enviar({ tipo: 'transcricao', quem: 'pessoa', texto: dito })
 
       this.historico.push({ quem: 'pessoa', texto: dito })
-      const resposta = await responderComGemini(this.historico, this.instrucao)
+      const resposta =
+        this.motor === 'groq'
+          ? await responderComGroq(this.historico, this.instrucao)
+          : await responderComGemini(this.historico, this.instrucao)
       if (!resposta) return
       const t2 = Date.now()
 

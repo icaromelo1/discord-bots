@@ -125,6 +125,7 @@ export const LABORATORIO = `<!doctype html>
     <button data-aba="piper" class="ativa">Piper (local)</button>
     <button data-aba="gemini">Gemini TTS</button>
     <button data-aba="stream">Stream (Live API)</button>
+    <button data-aba="groq">Groq + Piper</button>
   </nav>
 </header>
 <main>
@@ -266,6 +267,46 @@ export const LABORATORIO = `<!doctype html>
     <div class="estado-grid" id="stream-estado">carregando…</div>
   </section>
 
+  <section class="aba" id="aba-groq">
+    <div class="bloco">
+      <h2>Groq + Piper</h2>
+      <p>Transcreve com Whisper no Groq (idioma forçado em português), pensa com Llama no Groq, e fala com
+      Piper local — tudo em free tier.</p>
+    </div>
+    <div id="groq-sem-chave" style="display:none">
+      <div class="erro" style="user-select: text">Falta a GROQ_API_KEY. Crie uma chave grátis em
+      console.groq.com e coloque no .env.</div>
+    </div>
+    <div id="groq-controles">
+      <div class="linha">
+        <div class="campo">
+          <label for="groq-voz">Voz (Piper)</label>
+          <select id="groq-voz"><option>carregando…</option></select>
+        </div>
+        <div class="campo">
+          <label for="groq-velocidade">Velocidade — <span class="slider-valor" id="groq-velocidade-valor">1.0</span></label>
+          <input type="range" id="groq-velocidade" min="0.5" max="2.0" step="0.1" value="1.0">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="groq-instrucao">Instrução de sistema (opcional)</label>
+        <input type="text" id="groq-instrucao" placeholder="Você é o Icarus. Responda curto e natural.">
+      </div>
+      <h3 class="titulo-secao">Modo chamada</h3>
+      <div class="bloco chamada-bloco">
+        <div class="chamada-topo">
+          <button class="secundaria chamada-botao" id="groq-call-btn">Iniciar chamada</button>
+          <span class="indicador-chamada" id="groq-call-indicador"></span>
+          <span class="status" id="groq-call-status"></span>
+        </div>
+        <div class="medidor"><div class="medidor-barra" id="groq-call-medidor"></div></div>
+        <div id="groq-call-erro"></div>
+        <div class="chamada-tempos" id="groq-call-tempos"></div>
+        <div class="chamada-chat" id="groq-call-chat"></div>
+      </div>
+    </div>
+  </section>
+
 </main>
 <script>
 const abas = document.querySelectorAll('#abas button')
@@ -306,8 +347,8 @@ function mostrarErro(elId, mensagem) {
   el.innerHTML = mensagem ? '<div class="erro">' + mensagem + '</div>' : ''
 }
 
-async function carregarVozesPiper() {
-  const select = document.getElementById('piper-voz')
+async function carregarVozesPiper(selectId) {
+  const select = document.getElementById(selectId || 'piper-voz')
   try {
     const r = await fetch('/api/voz/piper/vozes')
     const dados = await r.json()
@@ -347,6 +388,24 @@ const piperPausaValor = document.getElementById('piper-pausa-valor')
 piperPausa.addEventListener('input', () => {
   piperPausaValor.textContent = Number(piperPausa.value).toFixed(2)
 })
+
+const groqVelocidade = document.getElementById('groq-velocidade')
+const groqVelocidadeValor = document.getElementById('groq-velocidade-valor')
+groqVelocidade.addEventListener('input', () => {
+  groqVelocidadeValor.textContent = Number(groqVelocidade.value).toFixed(1)
+})
+
+async function verificarEstadoGroq() {
+  try {
+    const r = await fetch('/api/voz/groq/estado')
+    const dados = await r.json()
+    document.getElementById('groq-sem-chave').style.display = dados.configurado ? 'none' : ''
+    document.getElementById('groq-controles').style.display = dados.configurado ? '' : 'none'
+  } catch (e) {
+    document.getElementById('groq-sem-chave').style.display = ''
+    document.getElementById('groq-controles').style.display = 'none'
+  }
+}
 
 function inserirHistorico(historicoId, item) {
   const container = document.getElementById(historicoId)
@@ -575,6 +634,14 @@ class ChamadaCliente {
     this.linhaPessoaAberta = null
     this.linhaBotAberta = null
     this.ativa = false
+    /** Motor da chamada em curso, guardado ao 'iniciar' para decidir como tratar o áudio capturado. */
+    this.motorAtual = null
+    /** Se o bot está com fala em reprodução — usado pelo barge-in local do motor stream. */
+    this.botFalando = false
+    /** Fontes de áudio agendadas e ainda tocando/por tocar, para poder cortar tudo de uma vez. */
+    this.fontesAgendadas = []
+    /** Folga antes do primeiro pedaço de cada resposta, pra absorver variação de rede sem picotar. */
+    this.FOLGA_REPRODUCAO = 0.12
 
     this.LIMIAR = 0.012
     this.SILENCIO_MAX_MS = 800
@@ -624,6 +691,7 @@ class ChamadaCliente {
 
     this.ws.addEventListener('open', () => {
       const opcoes = this.obterOpcoes()
+      this.motorAtual = opcoes.motor
       this.ws.send(JSON.stringify(Object.assign({ tipo: 'iniciar' }, opcoes)))
     })
 
@@ -646,11 +714,22 @@ class ChamadaCliente {
     }
     if (msg.tipo === 'transcricao') return this.aoReceberTranscricao(msg)
     if (msg.tipo === 'falando') {
+      this.botFalando = true
+      // toda resposta nova ganha a folga de novo — é o início dela, não uma continuação
+      this.proximoInicioReproducao = 0
       this.status.textContent = 'o bot está falando…'
       return
     }
     if (msg.tipo === 'audio') return this.tocarAudio(msg.dados, msg.taxaHz)
+    if (msg.tipo === 'interrompido') {
+      // o modelo foi interrompido por alguém falando por cima: para na hora e descarta
+      // o que ainda estava agendado, senão o bot continua "falando" uma resposta abandonada
+      this.pararReproducaoLocal()
+      this.status.textContent = 'em chamada · fale para começar'
+      return
+    }
     if (msg.tipo === 'fim-da-fala') {
+      this.botFalando = false
       this.linhaPessoaAberta = null
       this.linhaBotAberta = null
       this.status.textContent = 'em chamada · fale para começar'
@@ -664,6 +743,20 @@ class ChamadaCliente {
     if (msg.tipo === 'encerrada') {
       this.encerrar()
     }
+  }
+
+  /** Corta a reprodução em curso e descarta o que estava agendado para tocar depois. */
+  pararReproducaoLocal() {
+    for (const fonte of this.fontesAgendadas) {
+      try {
+        fonte.stop()
+      } catch (e) {
+        // já pode ter terminado sozinha
+      }
+    }
+    this.fontesAgendadas = []
+    this.proximoInicioReproducao = 0
+    this.botFalando = false
   }
 
   mostrarTempos(t) {
@@ -710,6 +803,23 @@ class ChamadaCliente {
       this.atualizarMedidor(rms)
 
       const comEnergia = rms > this.LIMIAR
+
+      if (this.motorAtual === 'stream') {
+        // barge-in local: não espera o servidor avisar que foi interrompido, corta na
+        // hora que o nível do microfone passa do limiar enquanto o bot está falando —
+        // é o que dá sensação de conversa de verdade
+        if (comEnergia && this.botFalando) this.pararReproducaoLocal()
+
+        // fluxo contínuo: cada pedaço vai direto pro servidor assim que é capturado,
+        // silêncio incluso — quem decide o fim do turno agora é o servidor do Gemini
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ tipo: 'audio', dados: this.paraBase64(pcm16k) }))
+        }
+        return
+      }
+
+      // piper, gemini e groq: transcrição é por requisição, então acumula a fala
+      // inteira e só envia quando detecta silêncio
       if (comEnergia) {
         this.teveEnergiaReal = true
         this.silencioMs = 0
@@ -847,11 +957,20 @@ class ChamadaCliente {
     const origem = this.audioContextSaida.createBufferSource()
     origem.buffer = buffer
     origem.connect(this.audioContextSaida.destination)
+    origem.onended = () => {
+      const i = this.fontesAgendadas.indexOf(origem)
+      if (i >= 0) this.fontesAgendadas.splice(i, 1)
+    }
 
     const agora = this.audioContextSaida.currentTime
-    const inicio = Math.max(agora, this.proximoInicioReproducao)
+    // proximoInicioReproducao volta a zero no início de cada resposta — é aí que entra
+    // a folga, pra absorver variação de rede sem picotar; os pedaços seguintes da mesma
+    // resposta continuam agendados em sequência, sem folga extra
+    const primeiroDaResposta = this.proximoInicioReproducao === 0
+    const inicio = Math.max(agora, this.proximoInicioReproducao) + (primeiroDaResposta ? this.FOLGA_REPRODUCAO : 0)
     origem.start(inicio)
     this.proximoInicioReproducao = inicio + buffer.duration
+    this.fontesAgendadas.push(origem)
   }
 
   encerrar() {
@@ -890,6 +1009,10 @@ class ChamadaCliente {
     this.bufferFala = []
     this.duracaoFalaMs = 0
     this.silencioMs = 0
+    this.fontesAgendadas = []
+    this.proximoInicioReproducao = 0
+    this.botFalando = false
+    this.motorAtual = null
     this.ativa = false
     this.botao.textContent = 'Iniciar chamada'
     this.botao.classList.remove('ativa')
@@ -914,12 +1037,20 @@ const chamadas = {
     voz: document.getElementById('stream-voz').value,
     instrucao: document.getElementById('stream-instrucao').value || undefined,
   })),
+  groq: new ChamadaCliente('groq', () => ({
+    motor: 'groq',
+    voz: document.getElementById('groq-voz').value,
+    velocidade: Number(groqVelocidade.value),
+    instrucao: document.getElementById('groq-instrucao').value || undefined,
+  })),
 }
 
-carregarVozesPiper()
+carregarVozesPiper('piper-voz')
+carregarVozesPiper('groq-voz')
 carregarVozesGemini('gemini-voz')
 carregarVozesGemini('stream-voz')
 atualizarEstadoStream()
+verificarEstadoGroq()
 </script>
 </body>
 </html>`
