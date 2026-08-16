@@ -9,6 +9,8 @@ import {
 } from 'discord.js'
 
 export interface IcarusCommandContext {
+  /** Toca um som de teste pela mesma tubulação da fala. */
+  testarAudio: (guildId: string) => Promise<boolean>
   entrar: (channel: VoiceBasedChannel) => Promise<void>
   sair: (guildId: string) => Promise<void>
   ondeEstou: () => { guildId: string; channelId: string } | null
@@ -21,10 +23,32 @@ const icarusCommand = new SlashCommandBuilder()
   .setDescription('Comandos do Icarus')
   .addSubcommand((sub) => sub.setName('entrar').setDescription('Chama o Icarus para a sua call'))
   .addSubcommand((sub) => sub.setName('sair').setDescription('Manda o Icarus sair da call'))
+  .addSubcommand((sub) =>
+    sub.setName('testar-audio').setDescription('Toca um som de teste para checar a saída de áudio'),
+  )
   .addSubcommand((sub) => sub.setName('memoria').setDescription('Mostra o que o Icarus sabe sobre você'))
   .addSubcommand((sub) =>
     sub.setName('esquecer').setDescription('Apaga tudo que o Icarus sabe sobre você'),
   )
+
+/**
+ * Diagnóstico do caminho de SAÍDA de áudio, sem Gemini no meio.
+ *
+ * Existe porque "o bot não fala" tem duas causas possíveis e indistinguíveis de fora:
+ * ou a resposta não está sendo gerada/liberada, ou a tubulação de áudio está quebrada.
+ * Este comando exercita só a tubulação.
+ */
+export function tomDeTeste(segundos = 2): Buffer {
+  const taxa = 24_000
+  const amostras = taxa * segundos
+  const pcm = Buffer.alloc(amostras * 2)
+  for (let i = 0; i < amostras; i++) {
+    // 440 Hz com envelope suave nas pontas, para não estalar
+    const env = Math.min(1, i / 2400, (amostras - i) / 2400)
+    pcm.writeInt16LE(Math.round(8000 * env * Math.sin((2 * Math.PI * 440 * i) / taxa)), i * 2)
+  }
+  return pcm
+}
 
 export const icarusCommandData: RESTPostAPIApplicationCommandsJSONBody[] = [icarusCommand.toJSON()]
 
@@ -115,6 +139,16 @@ export async function handleIcarusCommand(interaction: Interaction, ctx: IcarusC
     case 'sair':
       await handleSair(interaction, guildId, ctx)
       break
+    case 'testar-audio': {
+      await interaction.reply({ content: 'Tocando um som de teste...', ephemeral: true })
+      const ok = await ctx.testarAudio(guildId)
+      await interaction.editReply(
+        ok
+          ? 'Mandei o som. Ouviu? Se sim, a saída de áudio está boa e o problema é a resposta do modelo.'
+          : 'Não estou numa call — rode /icarus entrar antes.',
+      )
+      break
+    }
     case 'memoria':
       await handleMemoria(interaction, guildId, ctx)
       break

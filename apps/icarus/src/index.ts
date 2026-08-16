@@ -25,7 +25,12 @@ import { WakeDetector } from './wake/wake'
 import { TranscricaoServico } from './memory/transcricao-servico'
 import { TranscritorDesligado, WhisperCppTranscritor } from './memory/transcritor'
 import { esquecerUsuario, resumoDoQueSabe } from './memory/repositorio'
-import { handleIcarusCommand, icarusCommandData, type IcarusCommandContext } from './discord/comandos'
+import {
+  handleIcarusCommand,
+  icarusCommandData,
+  tomDeTeste,
+  type IcarusCommandContext,
+} from './discord/comandos'
 import { iniciarPainel } from './painel/servidor'
 
 async function main(): Promise<void> {
@@ -85,6 +90,7 @@ async function main(): Promise<void> {
       await conversa.entrar(channel, nomes)
     },
     sair: (guildId) => conversa.sair(guildId),
+    testarAudio: (guildId) => conversa.testarAudio(guildId, tomDeTeste()),
     ondeEstou: () => conversa.onde(),
     memoriaDe: (guildId, userId) => resumoDoQueSabe(guildId, userId),
     esquecer: (guildId, userId) => esquecerUsuario(guildId, userId),

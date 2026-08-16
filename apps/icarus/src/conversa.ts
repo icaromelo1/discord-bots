@@ -97,6 +97,19 @@ export class Conversa {
     this.mouth.onParouDeFalar((guildId) => void this.ducking.restaurar(guildId))
   }
 
+  /** Toca um som pela MESMA tubulação da fala: represa, decisão e stream. */
+  async testarAudio(guildId: string, pcm: Buffer): Promise<boolean> {
+    if (this.atual?.guildId !== guildId) return false
+
+    registro.registrar({ tipo: 'sessao', autor: 'Icarus', texto: 'som de teste enviado' })
+    const pedaco = 4800 * 2
+    for (let i = 0; i < pcm.length; i += pedaco) {
+      this.mouth.falar(guildId, pcm.subarray(i, Math.min(i + pedaco, pcm.length)))
+      this.mouth.decidir(guildId, true)
+    }
+    return true
+  }
+
   temSessao(): boolean {
     return this.sessao !== null
   }
