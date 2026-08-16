@@ -90,11 +90,14 @@ export class WakeDetector {
    */
   async examinar(userId: string, pcm16k: Buffer): Promise<{ texto: string; deteccao: DeteccaoWake | null }> {
     const texto = await this.transcritor.transcrever(pcm16k)
-    if (!texto) return { texto: '', deteccao: null }
+    return { texto, deteccao: this.verificar(userId, texto) }
+  }
 
+  /** Verifica um texto JÁ transcrito. Separado para não transcrever duas vezes. */
+  verificar(userId: string, texto: string): DeteccaoWake | null {
+    if (!texto) return null
     const { achou, resto } = encontrarAtivacao(texto, this.palavra)
-    if (!achou) return { texto, deteccao: null }
-
-    return { texto, deteccao: { userId, texto, textoAposNome: resto } }
+    if (!achou) return null
+    return { userId, texto, textoAposNome: resto }
   }
 }

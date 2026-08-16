@@ -22,7 +22,7 @@ import { Ears } from './ears/ears'
 import { Mouth } from './mouth/mouth'
 import { Ducking } from './mouth/ducking'
 import { WakeDetector } from './wake/wake'
-import { FilaDeTranscricao } from './memory/fila'
+import { TranscricaoServico } from './memory/transcricao-servico'
 import { TranscritorDesligado, WhisperCppTranscritor } from './memory/transcritor'
 import { esquecerUsuario, resumoDoQueSabe } from './memory/repositorio'
 import { handleIcarusCommand, icarusCommandData, type IcarusCommandContext } from './discord/comandos'
@@ -49,9 +49,6 @@ async function main(): Promise<void> {
   // dois transcritores porque as exigências são opostas: o da palavra de ativação
   // precisa responder em ~1s (tiny), o da memória pode atrasar minutos e prefere
   // precisão (base). Medido nesta VM: tiny faz 3s de áudio em 0,96s; base em 1,93s.
-  const transcritorWake = config.memoria.whisperBin
-    ? new WhisperCppTranscritor(config.memoria.whisperBin, config.memoria.whisperModelWake, config.voz.wakeWord, 4)
-    : new TranscritorDesligado()
   const transcritorMemoria = config.memoria.whisperBin
     ? new WhisperCppTranscritor(
         config.memoria.whisperBin,
@@ -60,20 +57,21 @@ async function main(): Promise<void> {
         config.memoria.whisperThreads,
       )
     : new TranscritorDesligado()
-  if (!transcritorWake.disponivel()) {
+  if (!transcritorMemoria.disponivel()) {
     console.warn('[icarus] Whisper não configurado: memória de ambiente e palavra de ativação desligadas')
   }
 
-  // o gatilho usa os 4 núcleos porque precisa responder rápido; a memória usa menos
-  // threads por processo e roda vários em paralelo, porque o que importa lá é vazão
-  const fila = new FilaDeTranscricao(transcritorMemoria, { concorrencia: config.memoria.concorrencia })
+  // um único serviço de transcrição para gatilho E memória: é a mesma frase, com o
+  // mesmo modelo. Prioriza o recente e descarta o que envelheceu, para que uma call
+  // movimentada não deixe o bot respondendo ao que foi dito minutos atrás.
+  const transcricao = new TranscricaoServico(transcritorMemoria, config.memoria.concorrencia)
   const ears = new Ears((userId) => client.users.cache.get(userId)?.bot ?? false)
   const mouth = new Mouth(voice)
   const ducking = new Ducking(config.ducking.djUrl, config.ducking.volumeAoFalar)
-  const wake = new WakeDetector(transcritorWake, config.voz.wakeWord)
+  const wake = new WakeDetector(transcritorMemoria, config.voz.wakeWord)
 
   const canaisDeAviso = new Map<string, TextBasedChannel>()
-  const conversa = new Conversa(voice, controller, ears, mouth, wake, fila, ducking, (guildId, texto) => {
+  const conversa = new Conversa(voice, controller, ears, mouth, wake, transcricao, ducking, (guildId, texto) => {
     const canal = canaisDeAviso.get(guildId)
     if (canal?.isSendable()) void canal.send(texto).catch(() => {})
   })
@@ -115,8 +113,6 @@ async function main(): Promise<void> {
 
   // a fila de ambiente roda em segundo plano, cedendo CPU: atrasar minutos é aceitável,
   // travar a conversa não é
-  const rodarFila = setInterval(() => void fila.processar(), 15_000)
-
   // painel de diagnóstico: só faz sentido publicado em 127.0.0.1 na VM, acessado por
   // túnel SSH — ele mostra transcrição de conversa privada
   const painel = config.painel.porta
@@ -127,7 +123,7 @@ async function main(): Promise<void> {
           canal: onde?.channelId ?? '—',
           sessao: conversa.temSessao() ? 'aberta' : 'fechada',
           wakeWord: config.voz.wakeWord,
-          fila: fila.tamanho(),
+          fila: transcricao.pendentesCount(),
         }
       })
     : null
@@ -137,9 +133,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[icarus] recebido ${signal}, encerrando`)
-    clearInterval(rodarFila)
     painel?.close()
-    fila.parar()
     const onde = conversa.onde()
     if (onde) await conversa.sair(onde.guildId)
     await client.destroy()

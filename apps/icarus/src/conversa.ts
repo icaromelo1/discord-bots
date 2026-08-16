@@ -24,7 +24,7 @@ import { carregarConhecimento, carregarPersona } from './brain/persona'
 import { salvarFala } from './memory/repositorio'
 import { registro } from './painel/registro'
 import { RitmoDaConversa } from './live/ritmo'
-import { FilaDeTranscricao } from './memory/fila'
+import type { TranscricaoServico } from './memory/transcricao-servico'
 
 export interface ConversaEmCurso {
   guildId: string
@@ -57,7 +57,7 @@ export class Conversa {
     private readonly ears: Ears,
     private readonly mouth: Mouth,
     private readonly wake: WakeDetector,
-    private readonly fila: FilaDeTranscricao,
+    private readonly transcricao: TranscricaoServico,
     private readonly ducking: Ducking,
     private readonly avisar: (guildId: string, texto: string) => void,
   ) {
@@ -109,23 +109,30 @@ export class Conversa {
 
     const nome = this.nomes.get(trecho.userId) ?? trecho.userId
 
-    // Toda fala vai para a memória de ambiente, tenha sido dirigida ao bot ou não.
-    // A fila é assíncrona e nunca bloqueia o caminho da conversa.
-    this.fila.enfileirar({
-      guildId,
-      canalId: this.atual?.channelId ?? '',
-      autorId: trecho.userId,
-      autorNome: nome,
-      pcm: trecho.pcm,
-      faladoEm: new Date(trecho.inicioMs),
-    })
-
     if (this.sessao) {
       this.alimentarSessao(trecho, nome)
+      // com a sessão aberta o Gemini já transcreve; transcrever de novo aqui seria
+      // pagar duas vezes pela mesma frase
       return
     }
 
-    const { texto, deteccao } = await this.wake.examinar(trecho.userId, trecho.pcm)
+    // UMA transcrição serve aos dois propósitos: verificar a palavra de ativação e
+    // alimentar a memória. Antes eram duas passagens pelo mesmo áudio, com o mesmo
+    // modelo — metade do trabalho era desperdício, e era o que fazia a fila crescer.
+    const texto = await this.transcricao.transcrever({ pcm: trecho.pcm, em: trecho.inicioMs })
+    const deteccao = this.wake.verificar(trecho.userId, texto)
+
+    if (texto) {
+      void salvarFala({
+        guildId,
+        canalId: this.atual?.channelId ?? '',
+        autorId: trecho.userId,
+        autorNome: nome,
+        texto,
+        origem: 'whisper',
+        faladoEm: new Date(trecho.inicioMs),
+      }).catch((erro) => console.error('[icarus] falha ao guardar fala do ambiente:', erro))
+    }
     // registra também o que NÃO acordou: é justamente isso que revela como o
     // reconhecedor está entendendo o nome
     registro.registrar({
