@@ -90,7 +90,7 @@ async function main(): Promise<void> {
       await conversa.entrar(channel, nomes)
     },
     sair: (guildId) => conversa.sair(guildId),
-    testarAudio: (guildId) => conversa.testarAudio(guildId, tomDeTeste()),
+    testarAudio: (guildId) => conversa.simularResposta(guildId, tomDeTeste(3)),
     ondeEstou: () => conversa.onde(),
     memoriaDe: (guildId, userId) => resumoDoQueSabe(guildId, userId),
     esquecer: (guildId, userId) => esquecerUsuario(guildId, userId),

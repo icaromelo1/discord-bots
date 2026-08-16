@@ -24,7 +24,7 @@ const icarusCommand = new SlashCommandBuilder()
   .addSubcommand((sub) => sub.setName('entrar').setDescription('Chama o Icarus para a sua call'))
   .addSubcommand((sub) => sub.setName('sair').setDescription('Manda o Icarus sair da call'))
   .addSubcommand((sub) =>
-    sub.setName('testar-audio').setDescription('Toca um som de teste para checar a saída de áudio'),
+    sub.setName('testar-audio').setDescription('Simula uma resposta do modelo para checar a saída de áudio'),
   )
   .addSubcommand((sub) => sub.setName('memoria').setDescription('Mostra o que o Icarus sabe sobre você'))
   .addSubcommand((sub) =>
@@ -38,14 +38,14 @@ const icarusCommand = new SlashCommandBuilder()
  * ou a resposta não está sendo gerada/liberada, ou a tubulação de áudio está quebrada.
  * Este comando exercita só a tubulação.
  */
-export function tomDeTeste(segundos = 2): Buffer {
+export function tomDeTeste(segundos = 2, hz = 440): Buffer {
   const taxa = 24_000
   const amostras = taxa * segundos
   const pcm = Buffer.alloc(amostras * 2)
   for (let i = 0; i < amostras; i++) {
     // 440 Hz com envelope suave nas pontas, para não estalar
     const env = Math.min(1, i / 2400, (amostras - i) / 2400)
-    pcm.writeInt16LE(Math.round(8000 * env * Math.sin((2 * Math.PI * 440 * i) / taxa)), i * 2)
+    pcm.writeInt16LE(Math.round(8000 * env * Math.sin((2 * Math.PI * hz * i) / taxa)), i * 2)
   }
   return pcm
 }
@@ -144,7 +144,7 @@ export async function handleIcarusCommand(interaction: Interaction, ctx: IcarusC
       const ok = await ctx.testarAudio(guildId)
       await interaction.editReply(
         ok
-          ? 'Mandei o som. Ouviu? Se sim, a saída de áudio está boa e o problema é a resposta do modelo.'
+          ? 'Simulei uma resposta completa. Ouviu? Se sim, a tubulação está boa e o problema é o modelo não gerar resposta com conteúdo.'
           : 'Não estou numa call — rode /icarus entrar antes.',
       )
       break

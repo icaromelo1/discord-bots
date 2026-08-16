@@ -97,16 +97,45 @@ export class Conversa {
     this.mouth.onParouDeFalar((guildId) => void this.ducking.restaurar(guildId))
   }
 
-  /** Toca um som pela MESMA tubulação da fala: represa, decisão e stream. */
-  async testarAudio(guildId: string, pcm: Buffer): Promise<boolean> {
+  /**
+   * Simula uma resposta do modelo do jeito que ela realmente chega: pedaços de PCM 24kHz
+   * espaçados no tempo, com a transcrição vindo junto e disparando a liberação.
+   *
+   * Exercita a mesma sequência de uma fala real — inclusive a represa e a decisão por
+   * conteúdo — sem depender do Gemini. Serve para separar "a tubulação está quebrada"
+   * de "o modelo não está respondendo".
+   */
+  async simularResposta(guildId: string, pcm: Buffer): Promise<boolean> {
     if (this.atual?.guildId !== guildId) return false
 
-    registro.registrar({ tipo: 'sessao', autor: 'Icarus', texto: 'som de teste enviado' })
-    const pedaco = 4800 * 2
-    for (let i = 0; i < pcm.length; i += pedaco) {
-      this.mouth.falar(guildId, pcm.subarray(i, Math.min(i + pedaco, pcm.length)))
-      this.mouth.decidir(guildId, true)
+    const PEDACO_MS = 40
+    const bytesPorPedaco = Math.round((24_000 * PEDACO_MS) / 1000) * 2
+    const total = Math.ceil(pcm.length / bytesPorPedaco)
+
+    registro.registrar({
+      tipo: 'sessao',
+      autor: 'Icarus',
+      texto: 'simulando resposta do modelo',
+      detalhe: `${total} pedaços de ${PEDACO_MS}ms`,
+    })
+
+    // primeiro trecho sem conteúdo, como o modelo faz quando a fala não é com ele:
+    // o áudio tem de ficar represado aqui
+    this.aoTrechoDeResposta(guildId, '...')
+
+    for (let i = 0; i < total; i++) {
+      const inicio = i * bytesPorPedaco
+      this.mouth.falar(guildId, pcm.subarray(inicio, Math.min(inicio + bytesPorPedaco, pcm.length)))
+
+      // no terceiro pedaço chega a primeira palavra de verdade: é o que libera tudo
+      // o que estava represado e passa a tocar ao vivo
+      if (i === 2) this.aoTrechoDeResposta(guildId, 'testando um dois tres')
+
+      await new Promise((r) => setTimeout(r, PEDACO_MS))
     }
+
+    this.mouth.fimDoTurno(guildId)
+    registro.registrar({ tipo: 'sessao', autor: 'Icarus', texto: 'simulação concluída' })
     return true
   }
 
