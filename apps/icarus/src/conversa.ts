@@ -18,6 +18,7 @@ import { Ducking } from './mouth/ducking'
 import { SessaoLive, CotaEstouradaError, ModeloIndisponivelError } from './live/sessao'
 import { WakeDetector } from './wake/wake'
 import { montarContexto } from './brain/contexto'
+import { encontrarAtivacao } from './wake/wake'
 import { buscar } from './memory/busca'
 import type { ResultadoFerramenta } from './live/ferramentas'
 import { carregarConhecimento, carregarPersona } from './brain/persona'
@@ -46,7 +47,12 @@ export class Conversa {
   private silencioTimer: NodeJS.Timeout | null = null
   private ultimoFalante: string | null = null
   private turnosSemResposta = 0
+  private abrindo = false
+  private ultimoNome = 'alguém'
   private readonly ritmo = new RitmoDaConversa()
+  /** Verdadeiro enquanto a conversa é com ele: falas seguintes pedem resposta direto. */
+  private emConversa = false
+  private conversaTimer: NodeJS.Timeout | null = null
   private readonly nomes = new Map<string, string>()
 
   private canalDeVoz: VoiceBasedChannel | null = null
@@ -82,7 +88,7 @@ export class Conversa {
     return this.atual
   }
 
-  entrar(channel: VoiceBasedChannel, nomes: Map<string, string>): void {
+  async entrar(channel: VoiceBasedChannel, nomes: Map<string, string>): Promise<void> {
     const connection = this.voice.ensure(channel)
     // sem isto ele sai da call 2 min depois de entrar: o temporizador de ociosidade da
     // camada compartilhada existe para o bot de música, e escutar não conta como tocar
@@ -92,6 +98,10 @@ export class Conversa {
     this.atual = { guildId: channel.guildId, channelId: channel.id }
     this.nomes.clear()
     for (const [id, nome] of nomes) this.nomes.set(id, nome)
+
+    // a sessão passa a nascer junto com a entrada na call: ele ouve tudo desde o
+    // primeiro segundo, mas só fala quando for chamado
+    await this.garantirSessao(channel.guildId)
   }
 
   async sair(guildId: string): Promise<void> {
@@ -109,16 +119,15 @@ export class Conversa {
 
     const nome = this.nomes.get(trecho.userId) ?? trecho.userId
 
-    if (this.sessao) {
+    // com a sessão sempre aberta, quem transcreve é o Gemini — bem melhor que o Whisper
+    // local, e sem custo extra porque o áudio já está indo de qualquer forma
+    if (await this.garantirSessao(guildId)) {
       this.alimentarSessao(trecho, nome)
-      // com a sessão aberta o Gemini já transcreve; transcrever de novo aqui seria
-      // pagar duas vezes pela mesma frase
       return
     }
 
-    // UMA transcrição serve aos dois propósitos: verificar a palavra de ativação e
-    // alimentar a memória. Antes eram duas passagens pelo mesmo áudio, com o mesmo
-    // modelo — metade do trabalho era desperdício, e era o que fazia a fila crescer.
+    // Caminho de reserva: sem sessão (cota, queda, falta de chave) volta a valer o
+    // reconhecimento local, só para o gatilho.
     const texto = await this.transcricao.transcrever({ pcm: trecho.pcm, em: trecho.inicioMs })
     const deteccao = this.wake.verificar(trecho.userId, texto)
 
@@ -143,7 +152,12 @@ export class Conversa {
     })
     if (!deteccao) return
 
-    await this.abrirSessao(guildId, trecho, nome, deteccao.textoAposNome)
+    // reserva: acordou pelo reconhecimento local, então tenta abrir a sessão agora
+    this.ultimoNome = nome
+    if (await this.garantirSessao(guildId)) {
+      this.entrarEmConversa()
+      this.alimentarSessao(trecho, nome)
+    }
   }
 
   private alimentarSessao(trecho: TrechoDeFala, nome: string): void {
@@ -154,8 +168,11 @@ export class Conversa {
       this.sessao.marcarFalante(nome)
       this.ultimoFalante = trecho.userId
     }
+    this.ultimoNome = nome
 
-    this.sessao.enviarAudio(trecho.pcm)
+    // fora do modo conversa o áudio entra como CONTEXTO e ele não responde; a resposta
+    // é destravada quando o nome aparece na transcrição que o próprio Gemini devolve
+    this.sessao.enviarAudio(trecho.pcm, { responder: this.emConversa })
     this.turnosSemResposta++
     this.reiniciarSilencio()
 
@@ -167,14 +184,36 @@ export class Conversa {
     }
   }
 
-  private async abrirSessao(
-    guildId: string,
-    trecho: TrechoDeFala,
-    nome: string,
-    pergunta: string,
-  ): Promise<void> {
+  /**
+   * Garante uma sessão aberta para a guild. Devolve false quando não foi possível
+   * (sem chave, cota estourada, queda) — aí o caminho de reserva local assume.
+   */
+  private async garantirSessao(guildId: string): Promise<boolean> {
+    if (this.sessao) return true
+    if (this.abrindo) return false
+    this.abrindo = true
+    try {
+      await this.abrirSessao(guildId)
+      return this.sessao !== null
+    } finally {
+      this.abrindo = false
+    }
+  }
+
+  /** Entra em modo conversa: as próximas falas pedem resposta sem repetir o nome. */
+  private entrarEmConversa(): void {
+    this.emConversa = true
+    if (this.conversaTimer) clearTimeout(this.conversaTimer)
+    const janela = Math.max(config.voz.sessaoSilencioMs, this.ritmo.janelaMs())
+    this.conversaTimer = setTimeout(() => {
+      this.emConversa = false
+      registro.registrar({ tipo: 'sessao', autor: 'Icarus', texto: 'voltou a só ouvir' })
+    }, janela)
+  }
+
+  private async abrirSessao(guildId: string): Promise<void> {
     const pessoas = [...this.nomes].map(([userId, n]) => ({ userId, nome: n }))
-    const contexto = await montarContexto(guildId, pessoas, pergunta || undefined)
+    const contexto = await montarContexto(guildId, pessoas)
     const conhecimento = carregarConhecimento()
 
     const instrucao = [carregarPersona(), conhecimento, contexto.texto].filter(Boolean).join('\n\n')
@@ -184,29 +223,45 @@ export class Conversa {
         guildId,
         contextoInicial: instrucao,
         onAudio: (pcm) => this.mouth.falar(guildId, pcm),
-        onTranscricao: (quem, texto) => void this.guardarTranscricao(guildId, quem, texto, nome, trecho.userId),
-        onFechada: () => {
+        onTranscricao: (quem, texto) => void this.aoTranscrever(guildId, quem, texto),
+        onFechada: (motivo) => {
           this.sessao = null
           this.ultimoFalante = null
+          this.emConversa = false
+          registro.registrar({ tipo: 'sessao', autor: 'Icarus', texto: 'sessão fechada', detalhe: motivo })
         },
         executarFerramenta: (nome, args) => this.executarFerramenta(guildId, nome, args),
       })
-      registro.registrar({ tipo: 'sessao', autor: nome, texto: 'sessão aberta', detalhe: pergunta })
-      this.ultimoFalante = trecho.userId
+      registro.registrar({ tipo: 'sessao', autor: 'Icarus', texto: 'sessão aberta (só ouvindo)' })
+      this.ultimoFalante = null
       this.turnosSemResposta = 0
-      this.sessao.marcarFalante(nome)
-      this.sessao.enviarAudio(trecho.pcm)
-      this.reiniciarSilencio()
     } catch (error) {
       this.sessao = null
       if (error instanceof CotaEstouradaError || error instanceof ModeloIndisponivelError) {
         this.avisar(guildId, error.message)
+        registro.registrar({ tipo: 'erro', autor: 'Icarus', texto: error.message })
         return
       }
-      registro.registrar({ tipo: 'erro', autor: nome, texto: 'falha ao abrir sessão', detalhe: String(error) })
+      registro.registrar({ tipo: 'erro', autor: 'Icarus', texto: 'falha ao abrir sessão', detalhe: String(error) })
       console.error('[icarus] falha ao abrir sessão:', error)
-      this.avisar(guildId, 'Não consegui te ouvir agora — tenta de novo daqui a pouco.')
     }
+  }
+
+  /**
+   * A transcrição do Gemini é a MELHOR que temos — e ela é quem detecta o nome agora.
+   * O Whisper local só sobra para o caminho de reserva, quando não há sessão.
+   */
+  private async aoTranscrever(guildId: string, quem: 'usuario' | 'bot', texto: string): Promise<void> {
+    if (quem === 'usuario' && !this.emConversa) {
+      const achou = encontrarAtivacao(texto, config.voz.wakeWord).achou
+      registro.registrar({ tipo: 'wake', autor: this.ultimoNome, texto, acordou: achou })
+      if (achou) {
+        this.entrarEmConversa()
+        this.sessao?.pedirResposta()
+      }
+    }
+
+    await this.guardarTranscricao(guildId, quem, texto, this.ultimoNome, this.ultimoFalante ?? 'desconhecido')
   }
 
   /**
@@ -298,7 +353,10 @@ export class Conversa {
   ): Promise<void> {
     if (!texto.trim()) return
     // ele respondeu: a conversa ainda é com ele
-    if (quem === 'bot') this.turnosSemResposta = 0
+    if (quem === 'bot') {
+      this.turnosSemResposta = 0
+      this.entrarEmConversa()
+    }
     registro.registrar({
       tipo: 'fala',
       autor: quem === 'bot' ? 'Icarus' : nomeUsuario,

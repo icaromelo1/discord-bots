@@ -82,7 +82,7 @@ async function main(): Promise<void> {
       for (const [id, member] of channel.members) {
         if (!member.user.bot) nomes.set(id, member.displayName)
       }
-      conversa.entrar(channel, nomes)
+      await conversa.entrar(channel, nomes)
     },
     sair: (guildId) => conversa.sair(guildId),
     ondeEstou: () => conversa.onde(),

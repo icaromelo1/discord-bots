@@ -136,3 +136,25 @@ describe('gatilho "arroz" — palavra do português, que o Whisper acerta', () =
     expect(encontrarAtivacao('fiz arroz com feijão hoje', 'arroz').achou).toBe(true)
   })
 })
+
+
+describe('gatilho "cubo"', () => {
+  it('reconhece e devolve o pedido', () => {
+    const r = encontrarAtivacao('Cubo, coloca um som aí', 'cubo')
+    expect(r.achou).toBe(true)
+    expect(r.resto).toBe('coloca um som aí')
+  })
+
+  it('não dispara em palavra que contém o gatilho', () => {
+    expect(encontrarAtivacao('cubomagico é outra coisa', 'cubo').achou).toBe(false)
+    expect(encontrarAtivacao('o cubículo lá', 'cubo').achou).toBe(false)
+  })
+
+  it('não dispara em conversa comum', () => {
+    expect(encontrarAtivacao('acho que foi da academia mesmo', 'cubo').achou).toBe(false)
+  })
+
+  it('reconhece no meio da frase, não só no começo', () => {
+    expect(encontrarAtivacao('ei cubo, tá me ouvindo?', 'cubo').achou).toBe(true)
+  })
+})
