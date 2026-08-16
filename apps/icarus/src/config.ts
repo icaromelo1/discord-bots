@@ -55,6 +55,12 @@ export const config = {
     djUrl: process.env.DJ_DUCKING_URL || null,
     volumeAoFalar: Number(process.env.DUCKING_VOLUME || '0.25'),
   },
+  tts: {
+    /** Binário do piper. Vazio desliga a aba local do laboratório. */
+    piperBin: process.env.PIPER_BIN || null,
+    piperVozesDir: process.env.PIPER_VOZES_DIR || null,
+    geminiModelo: process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
+  },
   painel: {
     /** Porta do painel de diagnóstico. 0 desliga. */
     porta: int('PAINEL_PORT', 8790),
