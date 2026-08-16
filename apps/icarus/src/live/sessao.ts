@@ -10,6 +10,10 @@ export interface SessaoOpcoes {
   onAudio: (pcm24kMono: Buffer) => void
   onTranscricao: (quem: 'usuario' | 'bot', texto: string) => void
   onFechada: (motivo: string) => void
+  /** Cada pedaço da transcrição da resposta, assim que chega. */
+  onTrechoDeResposta?: (texto: string) => void
+  /** O turno terminou — nada mais vem desta resposta. */
+  onFimDoTurno?: () => void
   /** Executa uma ferramenta pedida pelo modelo. Sem isto ele só conversa. */
   executarFerramenta?: ExecutorDeFerramenta
 }
@@ -116,7 +120,6 @@ export class SessaoLive {
     }
   }
 
-  private silenciado = true
   private bufferUsuario = ''
   private bufferBot = ''
 
@@ -128,6 +131,7 @@ export class SessaoLive {
     this.bufferBot = ''
     if (usuario) this.opcoes.onTranscricao('usuario', usuario)
     if (bot) this.opcoes.onTranscricao('bot', bot)
+    this.opcoes.onFimDoTurno?.()
   }
 
   private tratarMensagem(mensagem: LiveServerMessage): void {
@@ -142,7 +146,7 @@ export class SessaoLive {
     const partes = conteudo.modelTurn?.parts ?? []
     for (const parte of partes) {
       const dados = parte.inlineData?.data
-      if (dados && !this.silenciado) this.opcoes.onAudio(Buffer.from(dados, 'base64'))
+      if (dados) this.opcoes.onAudio(Buffer.from(dados, 'base64'))
     }
 
     // A Live API entrega a transcrição em PEDAÇOS ("Co" / "mo é" / " que" / " você").
@@ -152,7 +156,10 @@ export class SessaoLive {
     if (transcricaoUsuario) this.bufferUsuario += transcricaoUsuario
 
     const transcricaoBot = conteudo.outputTranscription?.text
-    if (transcricaoBot) this.bufferBot += transcricaoBot
+    if (transcricaoBot) {
+      this.bufferBot += transcricaoBot
+      this.opcoes.onTrechoDeResposta?.(transcricaoBot)
+    }
 
     if (conteudo.turnComplete || conteudo.generationComplete) this.fecharTurno()
   }
@@ -209,11 +216,6 @@ export class SessaoLive {
       },
     })
     this.session.sendRealtimeInput({ activityEnd: {} })
-  }
-
-  /** Quando silenciado, a resposta em áudio é descartada — ele processa mas não fala. */
-  silenciar(valor: boolean): void {
-    this.silenciado = valor
   }
 
   /** Marcador de quem passou a falar — é isto que permite conhecer os membros. */

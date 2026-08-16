@@ -35,32 +35,53 @@ describe('paraPcm48kEstereo', () => {
 })
 
 
-describe('uma resposta = um stream', () => {
+describe('represa o áudio até saber se a resposta é para alguém', () => {
   function vozFalsa() {
     const tocados: unknown[] = []
     return {
       tocados,
-      voice: {
-        play: (_g: string, fonte: unknown) => tocados.push(fonte),
-        stop: () => {},
-      } as never,
+      voice: { play: (_g: string, fonte: unknown) => tocados.push(fonte), stop: () => {} } as never,
     }
   }
 
-  it('cria um novo recurso de áudio a cada resposta', async () => {
+  it('não toca nada enquanto a decisão não vem', () => {
+    const { tocados, voice } = vozFalsa()
+    const mouth = new Mouth(voice)
+    mouth.falar('g1', Buffer.alloc(64))
+    mouth.falar('g1', Buffer.alloc(64))
+    // o modelo responde a TODO turno; sem decidir, responder a conversa alheia
+    // viraria som na call
+    expect(tocados).toHaveLength(0)
+  })
+
+  it('libera o represado quando a resposta tem conteúdo', () => {
+    const { tocados, voice } = vozFalsa()
+    const mouth = new Mouth(voice)
+    mouth.falar('g1', Buffer.alloc(64))
+    mouth.decidir('g1', true)
+    expect(tocados).toHaveLength(1)
+  })
+
+  it('descarta tudo quando a resposta não é para ninguém', () => {
+    const { tocados, voice } = vozFalsa()
+    const mouth = new Mouth(voice)
+    mouth.falar('g1', Buffer.alloc(64))
+    mouth.decidir('g1', false)
+    mouth.falar('g1', Buffer.alloc(64))
+    expect(tocados).toHaveLength(0)
+  })
+
+  it('cada resposta liberada ganha um recurso novo', async () => {
     const { tocados, voice } = vozFalsa()
     const mouth = new Mouth(voice)
 
     mouth.falar('g1', Buffer.alloc(64))
-    expect(tocados).toHaveLength(1)
-
-    // silêncio suficiente para o fim da fala ser detectado
+    mouth.decidir('g1', true)
     await new Promise((r) => setTimeout(r, 900))
-    expect(mouth.estaFalando('g1')).toBe(false)
+    mouth.fimDoTurno('g1')
 
-    // a resposta seguinte precisa de um recurso NOVO: escrever no anterior, já
-    // consumido pelo player, fazia o texto aparecer e o som não sair
     mouth.falar('g1', Buffer.alloc(64))
+    mouth.decidir('g1', true)
     expect(tocados).toHaveLength(2)
     expect(tocados[0]).not.toBe(tocados[1])
   })
@@ -68,11 +89,10 @@ describe('uma resposta = um stream', () => {
   it('chunks seguidos da MESMA resposta reusam o stream', () => {
     const { tocados, voice } = vozFalsa()
     const mouth = new Mouth(voice)
-
+    mouth.falar('g1', Buffer.alloc(64))
+    mouth.decidir('g1', true)
     mouth.falar('g1', Buffer.alloc(64))
     mouth.falar('g1', Buffer.alloc(64))
-    mouth.falar('g1', Buffer.alloc(64))
-
     expect(tocados).toHaveLength(1)
   })
 })

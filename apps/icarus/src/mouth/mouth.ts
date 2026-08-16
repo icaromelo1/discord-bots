@@ -1,10 +1,18 @@
 import { StreamType, VoiceManager } from '@bots/shared'
 import { PassThrough } from 'node:stream'
 
+type Decisao = 'pendente' | 'liberado' | 'descartado'
+
 interface GuildMouthState {
-  stream: PassThrough
+  stream: PassThrough | null
   fimTimer: NodeJS.Timeout | null
+  decisao: Decisao
+  /** Áudio segurado enquanto não se sabe se a resposta é para alguém. */
+  represado: Buffer[]
 }
+
+/** Teto do que se segura enquanto a decisão não vem — evita crescer sem limite. */
+const REPRESA_MAX_BYTES = 48_000 * 2 * 2 * 3
 
 /** Silêncio que marca o fim de uma resposta. Curto o bastante para a próxima fala não
  *  esperar, longo o bastante para não cortar no meio de uma pausa do próprio modelo. */
@@ -37,17 +45,30 @@ export class Mouth {
 
   constructor(private readonly voice: VoiceManager) {}
 
+  /**
+   * Recebe áudio da resposta. Enquanto não se sabe se a resposta é para alguém, o áudio
+   * fica represado — o modelo responde a cada turno, mas responder "..." a uma conversa
+   * alheia não deve virar som na call. Quem decide é `decidir()`, a partir do conteúdo.
+   */
   falar(guildId: string, pcm: Buffer): void {
     let state = this.states.get(guildId)
     if (!state) {
-      const stream = new PassThrough()
-      state = { stream, fimTimer: null }
+      state = { stream: null, fimTimer: null, decisao: 'pendente', represado: [] }
       this.states.set(guildId, state)
-      this.voice.play(guildId, stream, { tipo: StreamType.Raw })
-      this.comecouAFalarHandler?.(guildId)
     }
 
-    state.stream.write(paraPcm48kEstereo(pcm))
+    if (state.decisao === 'descartado') return
+
+    const pcm48 = paraPcm48kEstereo(pcm)
+
+    if (state.decisao === 'pendente') {
+      const total = state.represado.reduce((n, b) => n + b.length, 0)
+      if (total < REPRESA_MAX_BYTES) state.represado.push(pcm48)
+      return
+    }
+
+    this.abrirStream(guildId, state)
+    state.stream?.write(pcm48)
 
     // Uma resposta = um stream. Sem fechar ao fim de cada fala, o recurso de áudio da
     // primeira era consumido e descartado, e as respostas seguintes eram escritas num
@@ -55,6 +76,44 @@ export class Mouth {
     // porque é o único sinal que não depende de como o modelo fatia o turno.
     if (state.fimTimer) clearTimeout(state.fimTimer)
     state.fimTimer = setTimeout(() => this.finalizar(guildId), FIM_DA_FALA_MS)
+  }
+
+  /** Libera o que estava represado e passa a tocar ao vivo, ou descarta tudo. */
+  decidir(guildId: string, tocar: boolean): void {
+    const state = this.states.get(guildId)
+    if (!state || state.decisao !== 'pendente') return
+
+    if (!tocar) {
+      state.decisao = 'descartado'
+      state.represado = []
+      return
+    }
+
+    state.decisao = 'liberado'
+    this.abrirStream(guildId, state)
+    for (const chunk of state.represado) state.stream?.write(chunk)
+    state.represado = []
+
+    if (state.fimTimer) clearTimeout(state.fimTimer)
+    state.fimTimer = setTimeout(() => this.finalizar(guildId), FIM_DA_FALA_MS)
+  }
+
+  /** Fim do turno: o que sobrou pendente nunca foi liberado, então some. */
+  fimDoTurno(guildId: string): void {
+    const state = this.states.get(guildId)
+    if (!state) return
+    if (state.decisao === 'pendente') {
+      this.states.delete(guildId)
+      return
+    }
+    if (state.decisao === 'descartado') this.states.delete(guildId)
+  }
+
+  private abrirStream(guildId: string, state: GuildMouthState): void {
+    if (state.stream) return
+    state.stream = new PassThrough()
+    this.voice.play(guildId, state.stream, { tipo: StreamType.Raw })
+    this.comecouAFalarHandler?.(guildId)
   }
 
   /** Encerra o stream da resposta atual sem cortar o que já foi escrito. */
@@ -65,7 +124,7 @@ export class Mouth {
     if (state.fimTimer) clearTimeout(state.fimTimer)
     // end() e não stop(): o player termina de tocar o que está no buffer. Parar aqui
     // cortaria a última sílaba de toda resposta.
-    state.stream.end()
+    state.stream?.end()
     this.states.delete(guildId)
     this.parouDeFalarHandler?.(guildId)
   }
@@ -75,7 +134,7 @@ export class Mouth {
     if (!state) return
 
     if (state.fimTimer) clearTimeout(state.fimTimer)
-    state.stream.end()
+    state.stream?.end()
     this.voice.stop(guildId)
     this.states.delete(guildId)
     this.parouDeFalarHandler?.(guildId)

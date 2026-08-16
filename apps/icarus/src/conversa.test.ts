@@ -44,10 +44,14 @@ describe('ouvir sem falar', () => {
     expect(sessao).toMatch(/sendRealtimeInput\(\{ activityEnd: \{\} \}\)/)
   })
 
-  it('o silêncio é feito descartando a resposta, não segurando o turno', () => {
-    const sessao = fs.readFileSync(new URL('./live/sessao.ts', import.meta.url), 'utf8')
-    expect(sessao).toMatch(/!this\.silenciado/)
-    expect(fonte).toMatch(/silenciar\(false\)/)
-    expect(fonte).toMatch(/silenciar\(true\)/)
+  // quem decide se a resposta vira som é o CONTEÚDO dela, não um cronômetro: o modelo
+  // responde a todo turno, e responder "..." a conversa alheia não pode virar áudio
+  it('a resposta só é liberada quando tem conteúdo', () => {
+    expect(fonte).toMatch(/temConteudo/)
+    expect(fonte).toMatch(/this\.mouth\.decidir\(guildId, true\)/)
+  })
+
+  it('o fim do turno descarta o que ficou pendente', () => {
+    expect(fonte).toMatch(/onFimDoTurno.*fimDoTurno/s)
   })
 })

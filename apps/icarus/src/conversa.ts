@@ -27,6 +27,23 @@ import { registro } from './painel/registro'
 import { RitmoDaConversa } from './live/ritmo'
 import type { TranscricaoServico } from './memory/transcricao-servico'
 
+/** Uma resposta só vale som se tiver letra ou número — "...", "." e vazio não valem. */
+function temConteudo(texto: string): boolean {
+  return /[\p{L}\p{N}]/u.test(texto)
+}
+
+/** Energia média do trecho (0 = silêncio absoluto; fala normal fica acima de ~300). */
+function rms(pcm: Buffer): number {
+  const amostras = Math.floor(pcm.length / 2)
+  if (amostras === 0) return 0
+  let soma = 0
+  for (let i = 0; i + 1 < pcm.length; i += 2) {
+    const v = pcm.readInt16LE(i)
+    soma += v * v
+  }
+  return Math.round(Math.sqrt(soma / amostras))
+}
+
 export interface ConversaEmCurso {
   guildId: string
   channelId: string
@@ -119,6 +136,16 @@ export class Conversa {
 
     const nome = this.nomes.get(trecho.userId) ?? trecho.userId
 
+    // diagnóstico do que ENTRA: sem isto, "o bot não responde" é indistinguível de
+    // "o microfone não está chegando". Duração e energia contam essa diferença.
+    const duracaoMs = Math.round((trecho.pcm.length / 2 / 16_000) * 1000)
+    registro.registrar({
+      tipo: 'fala',
+      autor: nome,
+      texto: `[entrada] ${duracaoMs}ms`,
+      detalhe: `energia ${rms(trecho.pcm)}`,
+    })
+
     // com a sessão sempre aberta, quem transcreve é o Gemini — bem melhor que o Whisper
     // local, e sem custo extra porque o áudio já está indo de qualquer forma
     if (await this.garantirSessao(guildId)) {
@@ -190,7 +217,6 @@ export class Conversa {
   private sairDoModoConversa(motivo: string): void {
     if (!this.emConversa) return
     this.emConversa = false
-    this.sessao?.silenciar(true)
     this.turnosSemResposta = 0
     if (this.conversaTimer) clearTimeout(this.conversaTimer)
     if (this.silencioTimer) clearTimeout(this.silencioTimer)
@@ -218,7 +244,6 @@ export class Conversa {
   /** Entra em modo conversa: as próximas falas pedem resposta sem repetir o nome. */
   private entrarEmConversa(): void {
     this.emConversa = true
-    this.sessao?.silenciar(false)
     if (this.conversaTimer) clearTimeout(this.conversaTimer)
     // o ritmo pode esticar a janela, nunca encurtá-la: encurtar significa gerar a
     // resposta e jogar fora, que é pior do que ouvir um pouco a mais
@@ -239,6 +264,8 @@ export class Conversa {
         contextoInicial: instrucao,
         onAudio: (pcm) => this.mouth.falar(guildId, pcm),
         onTranscricao: (quem, texto) => void this.aoTranscrever(guildId, quem, texto),
+        onTrechoDeResposta: (texto) => this.aoTrechoDeResposta(guildId, texto),
+        onFimDoTurno: () => this.mouth.fimDoTurno(guildId),
         onFechada: (motivo) => {
           this.sessao = null
           this.ultimoFalante = null
@@ -260,6 +287,23 @@ export class Conversa {
       registro.registrar({ tipo: 'erro', autor: 'Icarus', texto: 'falha ao abrir sessão', detalhe: String(error) })
       console.error('[icarus] falha ao abrir sessão:', error)
     }
+  }
+
+  /**
+   * Decide se a resposta vira som, olhando o CONTEÚDO em vez do relógio.
+   *
+   * O modelo responde a todo turno, porque é assim que ele processa o áudio. Mas quando
+   * a fala não é para ele, a resposta vem vazia ou como pontuação ("...", "."). Basta a
+   * primeira palavra de verdade aparecer para liberar o áudio represado — e se o turno
+   * acabar sem nenhuma, o som é descartado e ninguém ouve nada.
+   *
+   * Isto substitui a janela de tempo como decisor: quem sabe se a conversa é com ele é
+   * ele, não um cronômetro.
+   */
+  private aoTrechoDeResposta(guildId: string, texto: string): void {
+    if (!temConteudo(texto)) return
+    this.mouth.decidir(guildId, true)
+    this.entrarEmConversa()
   }
 
   /**
