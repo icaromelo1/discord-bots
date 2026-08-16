@@ -90,6 +90,28 @@ export const LABORATORIO = `<!doctype html>
   .item-hist .texto-usado { font-size: 12px; color: var(--fraco); }
   audio { width: 100%; height: 32px; }
   .vazio { color: var(--fraco); text-align: center; padding: 20px 0; }
+  .chamada-bloco { gap: 14px; }
+  .chamada-topo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  button.chamada-botao.ativa { border-color: var(--nao); color: var(--nao); }
+  .indicador-chamada { width: 10px; height: 10px; border-radius: 50%; background: var(--linha); flex-shrink: 0; }
+  .indicador-chamada.ativa { background: var(--ok); animation: pulso-chamada 1.2s infinite; }
+  @keyframes pulso-chamada {
+    0% { box-shadow: 0 0 0 0 rgba(127, 177, 133, .55); }
+    70% { box-shadow: 0 0 0 8px rgba(127, 177, 133, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(127, 177, 133, 0); }
+  }
+  .medidor { height: 6px; background: var(--fundo); border: 1px solid var(--linha); border-radius: 3px; overflow: hidden; }
+  .medidor-barra { height: 100%; width: 0%; background: var(--acento); transition: width .05s linear; }
+  .chamada-tempos { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--fraco); }
+  .chamada-tempos b { color: var(--acento); }
+  .chamada-chat { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
+  .msg-chamada { padding: 8px 10px; border-radius: 4px; font-size: 13px; max-width: 85%; }
+  .msg-pessoa { align-self: flex-end; background: var(--painel); border: 1px solid var(--linha); }
+  .msg-bot { align-self: flex-start; background: #241f14; border: 1px solid var(--acento); }
+  .msg-chamada .quem {
+    display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--fraco); margin-bottom: 2px;
+  }
   @media (max-width: 600px) {
     header { flex-direction: column; align-items: flex-start; }
     .linha { flex-direction: column; }
@@ -132,6 +154,18 @@ export const LABORATORIO = `<!doctype html>
     <button class="acao" id="piper-gerar">Gerar e ouvir</button>
     <div class="status" id="piper-status"></div>
     <div id="piper-erro"></div>
+    <h3 class="titulo-secao">Modo chamada</h3>
+    <div class="bloco chamada-bloco">
+      <div class="chamada-topo">
+        <button class="secundaria chamada-botao" id="piper-call-btn">Iniciar chamada</button>
+        <span class="indicador-chamada" id="piper-call-indicador"></span>
+        <span class="status" id="piper-call-status"></span>
+      </div>
+      <div class="medidor"><div class="medidor-barra" id="piper-call-medidor"></div></div>
+      <div id="piper-call-erro"></div>
+      <div class="chamada-tempos" id="piper-call-tempos"></div>
+      <div class="chamada-chat" id="piper-call-chat"></div>
+    </div>
     <h3 class="titulo-secao">Histórico</h3>
     <div class="historico" id="piper-historico"><div class="vazio">Nenhuma geração ainda.</div></div>
   </section>
@@ -163,6 +197,18 @@ export const LABORATORIO = `<!doctype html>
     <button class="acao" id="gemini-gerar">Gerar e ouvir</button>
     <div class="status" id="gemini-status"></div>
     <div id="gemini-erro"></div>
+    <h3 class="titulo-secao">Modo chamada</h3>
+    <div class="bloco chamada-bloco">
+      <div class="chamada-topo">
+        <button class="secundaria chamada-botao" id="gemini-call-btn">Iniciar chamada</button>
+        <span class="indicador-chamada" id="gemini-call-indicador"></span>
+        <span class="status" id="gemini-call-status"></span>
+      </div>
+      <div class="medidor"><div class="medidor-barra" id="gemini-call-medidor"></div></div>
+      <div id="gemini-call-erro"></div>
+      <div class="chamada-tempos" id="gemini-call-tempos"></div>
+      <div class="chamada-chat" id="gemini-call-chat"></div>
+    </div>
     <h3 class="titulo-secao">Histórico</h3>
     <div class="historico" id="gemini-historico"><div class="vazio">Nenhuma geração ainda.</div></div>
   </section>
@@ -199,6 +245,18 @@ export const LABORATORIO = `<!doctype html>
     <button class="acao" id="stream-gerar">Enviar e ouvir</button>
     <div class="status" id="stream-status"></div>
     <div id="stream-erro"></div>
+    <h3 class="titulo-secao">Modo chamada</h3>
+    <div class="bloco chamada-bloco">
+      <div class="chamada-topo">
+        <button class="secundaria chamada-botao" id="stream-call-btn">Iniciar chamada</button>
+        <span class="indicador-chamada" id="stream-call-indicador"></span>
+        <span class="status" id="stream-call-status"></span>
+      </div>
+      <div class="medidor"><div class="medidor-barra" id="stream-call-medidor"></div></div>
+      <div id="stream-call-erro"></div>
+      <div class="chamada-tempos" id="stream-call-tempos"></div>
+      <div class="chamada-chat" id="stream-call-chat"></div>
+    </div>
     <h3 class="titulo-secao">Histórico</h3>
     <div class="historico" id="stream-historico"><div class="vazio">Nenhuma geração ainda.</div></div>
     <h3 class="titulo-secao">Estado do bot</h3>
@@ -214,6 +272,7 @@ const abas = document.querySelectorAll('#abas button')
 const secoes = document.querySelectorAll('.aba')
 abas.forEach((btn) => {
   btn.addEventListener('click', () => {
+    Object.values(chamadas).forEach((c) => { if (c.ativa) c.encerrar() })
     abas.forEach((b) => b.classList.remove('ativa'))
     secoes.forEach((s) => s.classList.remove('ativa'))
     btn.classList.add('ativa')
@@ -497,6 +556,365 @@ async function atualizarEstadoStream() {
   }
 }
 document.getElementById('stream-atualizar').addEventListener('click', atualizarEstadoStream)
+
+class ChamadaCliente {
+  constructor(prefixo, obterOpcoes) {
+    this.prefixo = prefixo
+    this.obterOpcoes = obterOpcoes
+    this.ws = null
+    this.audioContextEntrada = null
+    this.audioContextSaida = null
+    this.stream = null
+    this.processor = null
+    this.fonte = null
+    this.bufferFala = []
+    this.silencioMs = 0
+    this.duracaoFalaMs = 0
+    this.teveEnergiaReal = false
+    this.proximoInicioReproducao = 0
+    this.linhaPessoaAberta = null
+    this.linhaBotAberta = null
+    this.ativa = false
+
+    this.LIMIAR = 0.012
+    this.SILENCIO_MAX_MS = 800
+    this.FALA_MIN_MS = 300
+    /** Quanto do passado recente entra junto quando a fala começa. */
+    this.PRE_BUFFER_MS = 400
+    this.preBuffer = []
+
+    this.botao = document.getElementById(prefixo + '-call-btn')
+    this.indicador = document.getElementById(prefixo + '-call-indicador')
+    this.status = document.getElementById(prefixo + '-call-status')
+    this.erro = document.getElementById(prefixo + '-call-erro')
+    this.medidor = document.getElementById(prefixo + '-call-medidor')
+    this.tempos = document.getElementById(prefixo + '-call-tempos')
+    this.chat = document.getElementById(prefixo + '-call-chat')
+
+    this.botao.addEventListener('click', () => {
+      if (this.ativa) this.encerrar()
+      else this.iniciar()
+    })
+  }
+
+  mostrarErro(mensagem) {
+    this.erro.innerHTML = mensagem ? '<div class="erro">' + mensagem + '</div>' : ''
+  }
+
+  async iniciar() {
+    this.mostrarErro('')
+    this.chat.innerHTML = ''
+    this.tempos.innerHTML = ''
+    this.linhaPessoaAberta = null
+    this.linhaBotAberta = null
+    this.status.textContent = 'conectando…'
+
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      })
+    } catch (e) {
+      this.mostrarErro('Não foi possível acessar o microfone: ' + (e.message || e))
+      this.status.textContent = ''
+      return
+    }
+
+    const protocolo = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    this.ws = new WebSocket(protocolo + '//' + location.host + '/ws/chamada')
+
+    this.ws.addEventListener('open', () => {
+      const opcoes = this.obterOpcoes()
+      this.ws.send(JSON.stringify(Object.assign({ tipo: 'iniciar' }, opcoes)))
+    })
+
+    this.ws.addEventListener('message', (ev) => this.aoReceberMensagem(JSON.parse(ev.data)))
+    this.ws.addEventListener('close', () => this.encerrar())
+    this.ws.addEventListener('error', () => {
+      this.mostrarErro('Falha na conexão com o servidor de chamada.')
+    })
+  }
+
+  aoReceberMensagem(msg) {
+    if (msg.tipo === 'pronto') {
+      this.ativa = true
+      this.botao.textContent = 'Encerrar chamada'
+      this.botao.classList.add('ativa')
+      this.indicador.classList.add('ativa')
+      this.status.textContent = 'em chamada · fale para começar'
+      this.iniciarCapturaMicrofone()
+      return
+    }
+    if (msg.tipo === 'transcricao') return this.aoReceberTranscricao(msg)
+    if (msg.tipo === 'falando') {
+      this.status.textContent = 'o bot está falando…'
+      return
+    }
+    if (msg.tipo === 'audio') return this.tocarAudio(msg.dados, msg.taxaHz)
+    if (msg.tipo === 'fim-da-fala') {
+      this.linhaPessoaAberta = null
+      this.linhaBotAberta = null
+      this.status.textContent = 'em chamada · fale para começar'
+      if (msg.tempos) this.mostrarTempos(msg.tempos)
+      return
+    }
+    if (msg.tipo === 'erro') {
+      this.mostrarErro(msg.mensagem)
+      return
+    }
+    if (msg.tipo === 'encerrada') {
+      this.encerrar()
+    }
+  }
+
+  mostrarTempos(t) {
+    this.tempos.innerHTML =
+      '<span>transcrever: <b>' + formatarMs(t.transcrever) + '</b></span>' +
+      '<span>pensar: <b>' + formatarMs(t.pensar) + '</b></span>' +
+      '<span>falar: <b>' + formatarMs(t.falar) + '</b></span>' +
+      '<span>total: <b>' + formatarMs(t.total) + '</b></span>'
+  }
+
+  aoReceberTranscricao(msg) {
+    const chave = msg.quem === 'pessoa' ? 'linhaPessoaAberta' : 'linhaBotAberta'
+    if (msg.parcial && this[chave]) {
+      this[chave].textoAtual += msg.texto
+      this[chave].el.querySelector('.texto').textContent = this[chave].textoAtual
+      this.chat.scrollTop = this.chat.scrollHeight
+      return
+    }
+
+    const div = document.createElement('div')
+    div.className = 'msg-chamada ' + (msg.quem === 'pessoa' ? 'msg-pessoa' : 'msg-bot')
+    div.innerHTML = '<span class="quem">' + (msg.quem === 'pessoa' ? 'você' : 'bot') + '</span><span class="texto"></span>'
+    div.querySelector('.texto').textContent = msg.texto
+    this.chat.appendChild(div)
+    this.chat.scrollTop = this.chat.scrollHeight
+
+    this[chave] = msg.parcial ? { el: div, textoAtual: msg.texto } : null
+  }
+
+  iniciarCapturaMicrofone() {
+    const AudioContextClasse = window.AudioContext || window.webkitAudioContext
+    this.audioContextEntrada = new AudioContextClasse()
+    this.fonte = this.audioContextEntrada.createMediaStreamSource(this.stream)
+    this.processor = this.audioContextEntrada.createScriptProcessor(4096, 1, 1)
+
+    const taxaEntrada = this.audioContextEntrada.sampleRate
+
+    this.processor.onaudioprocess = (ev) => {
+      const entrada = ev.inputBuffer.getChannelData(0)
+      const pcm16k = this.reamostrarPara16k(entrada, taxaEntrada)
+      const rms = this.calcularRms(pcm16k)
+      const duracaoChunkMs = (pcm16k.length / 16000) * 1000
+
+      this.atualizarMedidor(rms)
+
+      const comEnergia = rms > this.LIMIAR
+      if (comEnergia) {
+        this.teveEnergiaReal = true
+        this.silencioMs = 0
+      } else {
+        this.silencioMs += duracaoChunkMs
+      }
+
+      if (comEnergia || this.bufferFala.length > 0) {
+        // Ao COMEÇAR a falar, inclui o que veio logo antes de a energia subir. Sem isto
+        // a primeira sílaba é cortada — e é justamente ela que o modelo usa para decidir
+        // o idioma: "É finalmente" chegava como "C'est finalement", em francês.
+        if (this.bufferFala.length === 0 && this.preBuffer.length > 0) {
+          for (const anterior of this.preBuffer) {
+            this.bufferFala.push(anterior)
+            this.duracaoFalaMs += (anterior.length / 16000) * 1000
+          }
+          this.preBuffer = []
+        }
+        this.bufferFala.push(pcm16k)
+        this.duracaoFalaMs += duracaoChunkMs
+      } else {
+        // enquanto está em silêncio, mantém uma janela curta do passado recente
+        this.preBuffer.push(pcm16k)
+        let acumulado = 0
+        for (const parte of this.preBuffer) acumulado += (parte.length / 16000) * 1000
+        while (acumulado > this.PRE_BUFFER_MS && this.preBuffer.length > 1) {
+          const fora = this.preBuffer.shift()
+          acumulado -= (fora.length / 16000) * 1000
+        }
+      }
+
+      if (this.bufferFala.length > 0 && this.silencioMs >= this.SILENCIO_MAX_MS) {
+        this.finalizarSegmento()
+      }
+    }
+
+    this.fonte.connect(this.processor)
+    this.processor.connect(this.audioContextEntrada.destination)
+  }
+
+  finalizarSegmento() {
+    const partes = this.bufferFala
+    const duracaoMs = this.duracaoFalaMs
+    const teveEnergiaReal = this.teveEnergiaReal
+    this.bufferFala = []
+    this.duracaoFalaMs = 0
+    this.silencioMs = 0
+    this.teveEnergiaReal = false
+    this.preBuffer = []
+
+    if (duracaoMs < this.FALA_MIN_MS || !teveEnergiaReal) return
+
+    let total = 0
+    for (const p of partes) total += p.length
+    const junto = new Int16Array(total)
+    let offset = 0
+    for (const p of partes) {
+      junto.set(p, offset)
+      offset += p.length
+    }
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ tipo: 'audio', dados: this.paraBase64(junto) }))
+    }
+  }
+
+  calcularRms(pcm16) {
+    let soma = 0
+    for (let i = 0; i < pcm16.length; i++) {
+      const v = pcm16[i] / 32768
+      soma += v * v
+    }
+    return pcm16.length ? Math.sqrt(soma / pcm16.length) : 0
+  }
+
+  atualizarMedidor(rms) {
+    const pct = Math.min(100, (rms / 0.3) * 100)
+    this.medidor.style.width = pct + '%'
+  }
+
+  reamostrarPara16k(float32, taxaEntrada) {
+    if (taxaEntrada === 16000) {
+      const saida = new Int16Array(float32.length)
+      for (let i = 0; i < float32.length; i++) saida[i] = this.paraInt16(float32[i])
+      return saida
+    }
+    const razao = taxaEntrada / 16000
+    const tamanhoSaida = Math.floor(float32.length / razao)
+    const saida = new Int16Array(tamanhoSaida)
+    for (let i = 0; i < tamanhoSaida; i++) {
+      const inicio = Math.floor(i * razao)
+      const fim = Math.floor((i + 1) * razao)
+      let soma = 0
+      let n = 0
+      for (let j = inicio; j < fim && j < float32.length; j++) {
+        soma += float32[j]
+        n++
+      }
+      saida[i] = this.paraInt16(n ? soma / n : 0)
+    }
+    return saida
+  }
+
+  paraInt16(amostra) {
+    const s = Math.max(-1, Math.min(1, amostra))
+    return s < 0 ? s * 32768 : s * 32767
+  }
+
+  paraBase64(int16) {
+    const bytes = new Uint8Array(int16.buffer)
+    let binario = ''
+    const tamanhoBloco = 0x8000
+    for (let i = 0; i < bytes.length; i += tamanhoBloco) {
+      binario += String.fromCharCode.apply(null, bytes.subarray(i, i + tamanhoBloco))
+    }
+    return btoa(binario)
+  }
+
+  tocarAudio(base64, taxaHz) {
+    const AudioContextClasse = window.AudioContext || window.webkitAudioContext
+    if (!this.audioContextSaida) {
+      this.audioContextSaida = new AudioContextClasse()
+      this.proximoInicioReproducao = 0
+    }
+    const binario = atob(base64)
+    const bytes = new Uint8Array(binario.length)
+    for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i)
+    const int16 = new Int16Array(bytes.buffer)
+    const float32 = new Float32Array(int16.length)
+    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768
+
+    const buffer = this.audioContextSaida.createBuffer(1, float32.length, taxaHz)
+    buffer.copyToChannel(float32, 0)
+
+    const origem = this.audioContextSaida.createBufferSource()
+    origem.buffer = buffer
+    origem.connect(this.audioContextSaida.destination)
+
+    const agora = this.audioContextSaida.currentTime
+    const inicio = Math.max(agora, this.proximoInicioReproducao)
+    origem.start(inicio)
+    this.proximoInicioReproducao = inicio + buffer.duration
+  }
+
+  encerrar() {
+    if (this.ws) {
+      if (this.ws.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ tipo: 'encerrar' }))
+        } catch (e) {
+          // conexão já pode estar caindo
+        }
+      }
+      this.ws.close()
+      this.ws = null
+    }
+    if (this.processor) {
+      this.processor.disconnect()
+      this.processor.onaudioprocess = null
+      this.processor = null
+    }
+    if (this.fonte) {
+      this.fonte.disconnect()
+      this.fonte = null
+    }
+    if (this.audioContextEntrada) {
+      this.audioContextEntrada.close()
+      this.audioContextEntrada = null
+    }
+    if (this.audioContextSaida) {
+      this.audioContextSaida.close()
+      this.audioContextSaida = null
+    }
+    if (this.stream) {
+      this.stream.getTracks().forEach((t) => t.stop())
+      this.stream = null
+    }
+    this.bufferFala = []
+    this.duracaoFalaMs = 0
+    this.silencioMs = 0
+    this.ativa = false
+    this.botao.textContent = 'Iniciar chamada'
+    this.botao.classList.remove('ativa')
+    this.indicador.classList.remove('ativa')
+    this.status.textContent = ''
+    this.medidor.style.width = '0%'
+  }
+}
+
+const chamadas = {
+  piper: new ChamadaCliente('piper', () => ({
+    motor: 'piper',
+    voz: document.getElementById('piper-voz').value,
+    velocidade: Number(piperVelocidade.value),
+  })),
+  gemini: new ChamadaCliente('gemini', () => ({
+    motor: 'gemini',
+    voz: document.getElementById('gemini-voz').value,
+  })),
+  stream: new ChamadaCliente('stream', () => ({
+    motor: 'stream',
+    voz: document.getElementById('stream-voz').value,
+    instrucao: document.getElementById('stream-instrucao').value || undefined,
+  })),
+}
 
 carregarVozesPiper()
 carregarVozesGemini('gemini-voz')

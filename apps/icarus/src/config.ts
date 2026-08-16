@@ -60,6 +60,8 @@ export const config = {
     piperBin: process.env.PIPER_BIN || null,
     piperVozesDir: process.env.PIPER_VOZES_DIR || null,
     geminiModelo: process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
+    /** Modelo de texto usado para transcrever e responder no modo Piper/TTS. */
+    modeloTexto: process.env.GEMINI_TEXT_MODEL || 'gemini-flash-latest',
   },
   painel: {
     /** Porta do painel de diagnóstico. 0 desliga. */

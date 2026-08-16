@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http'
 import { PAGINA } from './pagina'
 import { LABORATORIO } from './laboratorio'
 import { registro } from './registro'
+import { instalarChamada } from './chamada'
 import { pcmParaWav, sintetizarGemini, VOZES_GEMINI } from '../voz/gemini-tts'
 import { sintetizarPiper, vozesDisponiveis } from '../voz/piper'
 import { sintetizarViaLive } from '../voz/live-tts'
@@ -110,6 +111,7 @@ export function iniciarPainel(porta: number, estado: () => EstadoDoPainel): Serv
     res.end('não encontrado')
   })
 
+  instalarChamada(servidor)
   servidor.listen(porta, '0.0.0.0')
   return servidor
 }
