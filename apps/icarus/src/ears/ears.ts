@@ -28,18 +28,32 @@ const ALVO_SAMPLE_RATE = 16_000
 const FATOR_DECIMACAO = DISCORD_SAMPLE_RATE / ALVO_SAMPLE_RATE
 const BYTES_POR_SAMPLE = 2
 
-function paraPcm16kMono(opusFrameDecodado: Buffer): Buffer {
-  const samplesPorCanal = opusFrameDecodado.length / (BYTES_POR_SAMPLE * DISCORD_CHANNELS)
+/**
+ * Converte o PCM do Discord (48 kHz estéreo) para 16 kHz mono.
+ *
+ * A MÉDIA DOS TRÊS QUADROS DO GRUPO É OBRIGATÓRIA, não é refinamento. Pegar uma amostra
+ * a cada três e descartar as outras duas é decimação sem filtro anti-aliasing: tudo que
+ * está acima de 8 kHz no original — sibilância, chiado, ruído de microfone — dobra para
+ * dentro da faixa da voz como distorção, bem em cima das consoantes. Na prática o
+ * reconhecedor passou a devolver "A hoís" para "Arroz".
+ *
+ * A média de três é um filtro passa-baixas de três derivações: rudimentar, mas atenua o
+ * que seria rebatido e custa praticamente nada.
+ */
+export function paraPcm16kMono(opusFrameDecodado: Buffer): Buffer {
+  const samplesPorCanal = Math.floor(opusFrameDecodado.length / (BYTES_POR_SAMPLE * DISCORD_CHANNELS))
   const samplesSaida = Math.floor(samplesPorCanal / FATOR_DECIMACAO)
   const saida = Buffer.alloc(samplesSaida * BYTES_POR_SAMPLE)
 
   for (let i = 0; i < samplesSaida; i++) {
-    const indiceFrame = i * FATOR_DECIMACAO
-    const offset = indiceFrame * BYTES_POR_SAMPLE * DISCORD_CHANNELS
-    const esquerda = opusFrameDecodado.readInt16LE(offset)
-    const direita = opusFrameDecodado.readInt16LE(offset + BYTES_POR_SAMPLE)
-    const media = (esquerda + direita) >> 1
-    saida.writeInt16LE(media, i * BYTES_POR_SAMPLE)
+    let soma = 0
+    for (let j = 0; j < FATOR_DECIMACAO; j++) {
+      const offset = (i * FATOR_DECIMACAO + j) * BYTES_POR_SAMPLE * DISCORD_CHANNELS
+      const esquerda = opusFrameDecodado.readInt16LE(offset)
+      const direita = opusFrameDecodado.readInt16LE(offset + BYTES_POR_SAMPLE)
+      soma += (esquerda + direita) / 2
+    }
+    saida.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(soma / FATOR_DECIMACAO))), i * BYTES_POR_SAMPLE)
   }
 
   return saida
