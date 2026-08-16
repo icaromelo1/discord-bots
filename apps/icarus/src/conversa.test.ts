@@ -33,3 +33,21 @@ describe('sessão x modo conversa', () => {
     expect(fonte).toMatch(/if \(!this\.emConversa\) return/)
   })
 })
+
+
+describe('ouvir sem falar', () => {
+  it('todo trecho fecha o turno — sem isso o Gemini não transcreve nada', () => {
+    const sessao = fs.readFileSync(new URL('./live/sessao.ts', import.meta.url), 'utf8')
+    // o activityEnd não pode voltar a ser condicional: já causou "sessão aberta e
+    // nenhum evento", porque áudio sem fim de turno não é processado
+    expect(sessao).not.toMatch(/if \(opcoes\.responder\)/)
+    expect(sessao).toMatch(/sendRealtimeInput\(\{ activityEnd: \{\} \}\)/)
+  })
+
+  it('o silêncio é feito descartando a resposta, não segurando o turno', () => {
+    const sessao = fs.readFileSync(new URL('./live/sessao.ts', import.meta.url), 'utf8')
+    expect(sessao).toMatch(/!this\.silenciado/)
+    expect(fonte).toMatch(/silenciar\(false\)/)
+    expect(fonte).toMatch(/silenciar\(true\)/)
+  })
+})

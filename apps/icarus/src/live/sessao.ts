@@ -116,6 +116,7 @@ export class SessaoLive {
     }
   }
 
+  private silenciado = true
   private bufferUsuario = ''
   private bufferBot = ''
 
@@ -141,7 +142,7 @@ export class SessaoLive {
     const partes = conteudo.modelTurn?.parts ?? []
     for (const parte of partes) {
       const dados = parte.inlineData?.data
-      if (dados) this.opcoes.onAudio(Buffer.from(dados, 'base64'))
+      if (dados && !this.silenciado) this.opcoes.onAudio(Buffer.from(dados, 'base64'))
     }
 
     // A Live API entrega a transcrição em PEDAÇOS ("Co" / "mo é" / " que" / " você").
@@ -193,9 +194,13 @@ export class SessaoLive {
    * mandamos nada. Sem sinalizar o fim, o modelo recebia a fala e ficava esperando mais —
    * respondia à primeira e emudecia nas seguintes.
    */
-  enviarAudio(pcm16kMono: Buffer, opcoes: { responder: boolean } = { responder: true }): void {
+  enviarAudio(pcm16kMono: Buffer): void {
     if (this.estadoAtual !== 'aberta' || !this.session) return
 
+    // O turno SEMPRE fecha. Tentei manter o turno aberto para ele "ouvir sem responder",
+    // e o efeito foi ele não ouvir nada: sem activityEnd o modelo não processa o áudio,
+    // então não vem transcrição — e sem transcrição não há como detectar o nome.
+    // Quem decide se a resposta vira som é a camada de cima (ver silenciar()).
     this.session.sendRealtimeInput({ activityStart: {} })
     this.session.sendRealtimeInput({
       media: {
@@ -203,17 +208,12 @@ export class SessaoLive {
         mimeType: 'audio/pcm;rate=16000',
       },
     })
-
-    // Sem activityEnd o modelo RECEBE o áudio mas não fecha o turno — ou seja, ouve a
-    // conversa e fica calado. É isso que permite manter a sessão aberta na call inteira
-    // sem ele interromper toda hora: só quando alguém o chama é que pedimos resposta.
-    if (opcoes.responder) this.session.sendRealtimeInput({ activityEnd: {} })
+    this.session.sendRealtimeInput({ activityEnd: {} })
   }
 
-  /** Fecha o turno pendente, fazendo o modelo responder ao que já ouviu. */
-  pedirResposta(): void {
-    if (this.estadoAtual !== 'aberta' || !this.session) return
-    this.session.sendRealtimeInput({ activityEnd: {} })
+  /** Quando silenciado, a resposta em áudio é descartada — ele processa mas não fala. */
+  silenciar(valor: boolean): void {
+    this.silenciado = valor
   }
 
   /** Marcador de quem passou a falar — é isto que permite conhecer os membros. */

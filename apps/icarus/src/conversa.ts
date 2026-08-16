@@ -172,7 +172,7 @@ export class Conversa {
 
     // fora do modo conversa o áudio entra como CONTEXTO e ele não responde; a resposta
     // é destravada quando o nome aparece na transcrição que o próprio Gemini devolve
-    this.sessao.enviarAudio(trecho.pcm, { responder: this.emConversa })
+    this.sessao.enviarAudio(trecho.pcm)
 
     // Fora do modo conversa, ouvir sem responder é o estado NORMAL — contar isso como
     // "a conversa seguiu sem ele" fazia a sessão fechar a cada duas falas do ambiente.
@@ -190,6 +190,7 @@ export class Conversa {
   private sairDoModoConversa(motivo: string): void {
     if (!this.emConversa) return
     this.emConversa = false
+    this.sessao?.silenciar(true)
     this.turnosSemResposta = 0
     if (this.conversaTimer) clearTimeout(this.conversaTimer)
     if (this.silencioTimer) clearTimeout(this.silencioTimer)
@@ -217,6 +218,7 @@ export class Conversa {
   /** Entra em modo conversa: as próximas falas pedem resposta sem repetir o nome. */
   private entrarEmConversa(): void {
     this.emConversa = true
+    this.sessao?.silenciar(false)
     if (this.conversaTimer) clearTimeout(this.conversaTimer)
     const janela = Math.max(config.voz.sessaoSilencioMs, this.ritmo.janelaMs())
     this.conversaTimer = setTimeout(() => this.sairDoModoConversa('janela-encerrada'), janela)
@@ -266,10 +268,7 @@ export class Conversa {
     if (quem === 'usuario' && !this.emConversa) {
       const achou = encontrarAtivacao(texto, config.voz.wakeWord).achou
       registro.registrar({ tipo: 'wake', autor: this.ultimoNome, texto, acordou: achou })
-      if (achou) {
-        this.entrarEmConversa()
-        this.sessao?.pedirResposta()
-      }
+      if (achou) this.entrarEmConversa()
     }
 
     await this.guardarTranscricao(guildId, quem, texto, this.ultimoNome, this.ultimoFalante ?? 'desconhecido')
