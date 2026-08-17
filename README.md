@@ -6,7 +6,8 @@ por bot.
 | App | Bot | O que é |
 |---|---|---|
 | `apps/dj` | DJ NARUTINHO | Toca música do YouTube em vários servidores |
-| `apps/icarus` | Icarus | *(a construir)* conversa por voz, memória e música |
+| `apps/icarus` | Icarus | **Pausado** — conversa por voz com memória. Ver [`apps/icarus/README.md`](apps/icarus/README.md) |
+| `apps/gm` | GM | Monitora o Minecraft via RCON e logs. Migrado para cá, mas ainda **não subiu** desta estrutura |
 
 Designs: [`docs/design/`](docs/design/)
 
@@ -15,6 +16,8 @@ Designs: [`docs/design/`](docs/design/)
 ```
 packages/shared/   fila, voz, biblioteca de música, painéis, client, comandos
 apps/dj/           env, banco e bootstrap do DJ NARUTINHO
+apps/icarus/       ouvidos, boca, sessão de voz, memória, laboratório
+apps/gm/           RCON e watcher de log do Minecraft
 ```
 
 `packages/shared` não lê variável de ambiente: cada app monta um `SharedConfig` e

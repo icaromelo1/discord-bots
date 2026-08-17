@@ -1,11 +1,16 @@
-# Icarus — o que foi, como foi feito, e onde parou
+# Icarus
 
-> Data: 2026-08-17 · **Status: pausado**
-> Design original: [`2026-08-14-icarus.md`](2026-08-14-icarus.md)
+Bot de Discord que conversa por voz, com memória do que foi dito na call.
+
+> **Status: pausado em 17/08/2026.** Implementado e parcialmente funcional.
 > 43 commits · 49 arquivos · ~4.800 linhas · 226 testes verdes
+>
+> Design original: [`docs/design/2026-08-14-icarus.md`](../../docs/design/2026-08-14-icarus.md)
+> · Como rodar local: [`RODAR-LOCAL.md`](RODAR-LOCAL.md)
 
-Documento de retomada. Escrito para que alguém (inclusive o Icaro daqui a seis meses)
-consiga voltar a mexer sem reconstruir o raciocínio — e principalmente sem repetir os
+Este documento é a retrospectiva completa: a ideia, o que foi construído, até onde
+chegou e como retomar. Escrito para que alguém — inclusive o Icaro daqui a seis meses —
+consiga voltar a mexer sem reconstruir o raciocínio, e principalmente sem repetir os
 erros que já custaram tempo aqui.
 
 ---
