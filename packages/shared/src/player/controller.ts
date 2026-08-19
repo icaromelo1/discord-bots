@@ -95,6 +95,11 @@ export class PlayerController {
   private async advance(guildId: string): Promise<void> {
     const next = this.queue.next(guildId)
     if (!next) {
+      // Sem próxima faixa é preciso PARAR o áudio explicitamente. Quando há próxima, o
+      // play() substitui o recurso e a troca acontece sozinha — por isso o /pular
+      // funcionava com fila cheia e não fazia nada na última música: a fila esvaziava
+      // e o som continuava tocando.
+      this.voice.stop(guildId)
       this.emit(guildId)
       return
     }
