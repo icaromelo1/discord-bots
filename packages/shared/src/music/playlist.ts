@@ -43,13 +43,17 @@ export async function handlePlaylist(
     }
 
     const prefixo = titulo ? `Playlist **${titulo}**` : 'Playlist'
+    const faixas = `${adicionadas} faixa${adicionadas === 1 ? '' : 's'}`
+
     if (cortadas === 0) {
-      return { ok: true, mensagem: `${prefixo} — ${adicionadas} faixas na fila.` }
+      // playlist de uma faixa só parece erro para quem mandou um link esperando várias
+      const nota = adicionadas === 1 ? ' (essa playlist tem só uma música)' : ''
+      return { ok: true, mensagem: `${prefixo} — ${faixas} na fila.${nota}` }
     }
 
     return {
       ok: true,
-      mensagem: `${prefixo} — ${adicionadas} faixas na fila. Outras ${cortadas} não couberam (a fila tem limite de ${getSharedConfig().player.maxQueue}).`,
+      mensagem: `${prefixo} — ${faixas} na fila. Outras ${cortadas} não couberam (a fila tem limite de ${getSharedConfig().player.maxQueue}).`,
     }
   } catch (error) {
     if (error instanceof YtDlpError) {

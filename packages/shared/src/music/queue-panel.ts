@@ -65,12 +65,19 @@ export function buildQueuePanel(
 ): { embeds: EmbedBuilder[]; components: ActionRowBuilder<any>[] } {
   const embed = new EmbedBuilder().setColor(EMBED_COLOR).setTitle(buildTitle(state.items.length))
 
+  // a faixa atual NÃO está em items — ela sai da fila ao começar a tocar. Checar só
+  // items.length aqui fazia o painel dizer "Fila vazia" com música no ar, que foi
+  // exatamente o que aconteceu ao tocar uma playlist de uma faixa só.
+  const linhas: string[] = []
+  if (state.current) {
+    linhas.push(`▶ Tocando: **${state.current.title}** — pedido por ${state.current.addedByName}`)
+  }
   if (state.items.length === 0) {
-    embed.setDescription('Fila vazia.')
-  } else {
-    if (state.current) {
-      embed.setDescription(`▶ Tocando: **${state.current.title}** — pedido por ${state.current.addedByName}`)
-    }
+    linhas.push(state.current ? 'Nada mais na fila.' : 'Fila vazia.')
+  }
+  if (linhas.length > 0) embed.setDescription(linhas.join('\n'))
+
+  if (state.items.length > 0) {
     embed.addFields({ name: 'Próximas', value: buildQueueField(state.items) })
   }
 
