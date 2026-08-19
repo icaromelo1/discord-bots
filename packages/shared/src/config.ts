@@ -17,6 +17,8 @@ export interface SharedConfig {
   }
   ytdlp: {
     maxDurationSec: number
+    /** Ids do Discord isentos do limite de duração. Vazio = ninguém é isento. */
+    semLimiteDuracao: string[]
     playerClients: string
     potProviderUrl: string | null
   }
@@ -36,6 +38,19 @@ export function configureShared(config: SharedConfig): void {
     throw new Error('guildIds está vazia — sem allowlist o bot aceitaria qualquer servidor')
   }
   atual = config
+}
+
+/**
+ * Limite de duração que vale para quem pediu a faixa.
+ *
+ * O teto existe para uma pessoa não encher a fila com um mix de 4 horas sem querer —
+ * é proteção contra acidente, não contra o dono do bot. Quem está em semLimiteDuracao
+ * baixa o que quiser.
+ */
+export function limiteDuracaoSec(userId?: string | null): number {
+  const { maxDurationSec, semLimiteDuracao } = getSharedConfig().ytdlp
+  if (userId && semLimiteDuracao.includes(userId)) return Number.POSITIVE_INFINITY
+  return maxDurationSec
 }
 
 export function getSharedConfig(): SharedConfig {

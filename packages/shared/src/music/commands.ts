@@ -196,7 +196,7 @@ async function handleTocar(interaction: ChatInputCommandInteraction, guildId: st
   if (!youtubeId) {
     await interaction.deferReply({ ephemeral: true })
     try {
-      const resultados = await searchYoutube(entrada, 5)
+      const resultados = await searchYoutube(entrada, 5, userId)
       if (resultados.length === 0) {
         await interaction.editReply(`Não achei nada para "${entrada}".`)
         return

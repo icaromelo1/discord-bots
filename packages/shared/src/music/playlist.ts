@@ -20,7 +20,7 @@ export async function handlePlaylist(
   const userName = interaction.user.username
 
   try {
-    const { titulo, entradas } = await listPlaylist(url)
+    const { titulo, entradas } = await listPlaylist(url, userId)
 
     if (entradas.length === 0) {
       return { ok: false, mensagem: 'Não achei nenhuma faixa tocável nessa playlist.' }

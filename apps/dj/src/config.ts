@@ -45,6 +45,7 @@ export function buildSharedConfig(): SharedConfig {
     },
     ytdlp: {
       maxDurationSec: int('MAX_DURATION_SEC', 1200),
+      semLimiteDuracao: list('SEM_LIMITE_DURACAO'),
       playerClients: process.env.PLAYER_CLIENTS || 'web,mweb,tv',
       potProviderUrl: process.env.POT_PROVIDER_URL || null,
     },

@@ -2,7 +2,7 @@ import { execFile as execFileCallback } from 'node:child_process'
 import { promisify } from 'node:util'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { getSharedConfig, logPrefix } from '../config'
+import { limiteDuracaoSec, getSharedConfig, logPrefix } from '../config'
 
 const execFile = promisify(execFileCallback)
 
@@ -157,7 +157,7 @@ export interface SearchResult {
   durationSec: number
 }
 
-export async function searchYoutube(termo: string, limite = 5): Promise<SearchResult[]> {
+export async function searchYoutube(termo: string, limite = 5, userId?: string): Promise<SearchResult[]> {
   const termoLimpo = termo.trim()
   if (!termoLimpo) return []
 
@@ -193,7 +193,7 @@ export async function searchYoutube(termo: string, limite = 5): Promise<SearchRe
     .filter((entry) => entry.live_status !== 'is_live')
     // não oferecer o que seria recusado na hora de tocar: busca por termo comum traz
     // mixes de várias horas, e escolher um deles só devolveria erro
-    .filter((entry) => !entry.duration || entry.duration <= getSharedConfig().ytdlp.maxDurationSec)
+    .filter((entry) => !entry.duration || entry.duration <= limiteDuracaoSec(userId))
     .map((entry) => ({
       youtubeId: entry.id as string,
       title: entry.title as string,
@@ -208,7 +208,7 @@ export interface PlaylistInfo {
   entradas: { youtubeId: string; title: string; durationSec: number }[]
 }
 
-export async function listPlaylist(url: string): Promise<PlaylistInfo> {
+export async function listPlaylist(url: string, userId?: string): Promise<PlaylistInfo> {
   const args = ['-J', '--flat-playlist', '--no-warnings', ...cookieArgs(), ...potArgs(), url]
 
   let stdout: string
@@ -229,7 +229,7 @@ export async function listPlaylist(url: string): Promise<PlaylistInfo> {
   const entradas = (data.entries ?? [])
     .filter((entry) => entry.id && YOUTUBE_ID_REGEX.test(entry.id) && entry.title)
     .filter((entry) => entry.live_status !== 'is_live')
-    .filter((entry) => !entry.duration || entry.duration <= getSharedConfig().ytdlp.maxDurationSec)
+    .filter((entry) => !entry.duration || entry.duration <= limiteDuracaoSec(userId))
     .map((entry) => ({
       youtubeId: entry.id as string,
       title: entry.title as string,
@@ -242,7 +242,7 @@ export async function listPlaylist(url: string): Promise<PlaylistInfo> {
   }
 }
 
-export async function fetchInfo(youtubeId: string): Promise<YtDlpInfo> {
+export async function fetchInfo(youtubeId: string, userId?: string): Promise<YtDlpInfo> {
   if (!YOUTUBE_ID_REGEX.test(youtubeId)) {
     throw new YtDlpError('Link do YouTube inválido.', 'link-invalido')
   }
@@ -269,9 +269,10 @@ export async function fetchInfo(youtubeId: string): Promise<YtDlpInfo> {
     throw new YtDlpError('Não deu pra identificar a duração deste vídeo.', 'desconhecido')
   }
 
-  if (data.duration > getSharedConfig().ytdlp.maxDurationSec) {
+  const limite = limiteDuracaoSec(userId)
+  if (data.duration > limite) {
     throw new YtDlpError(
-      `Esse vídeo tem ${formatDuration(data.duration)} — passa do limite de ${formatDuration(getSharedConfig().ytdlp.maxDurationSec)}.`,
+      `Esse vídeo tem ${formatDuration(data.duration)} — passa do limite de ${formatDuration(limite)}.`,
       'muito-longo',
     )
   }

@@ -58,9 +58,13 @@ async function upsertGuildTrack(guildId: string, trackId: string, userId: string
     .execute()
 }
 
-async function downloadAndStore(youtubeId: string, onProgress?: (label: string) => void): Promise<Track> {
+async function downloadAndStore(
+  youtubeId: string,
+  userId?: string,
+  onProgress?: (label: string) => void,
+): Promise<Track> {
   onProgress?.('baixando áudio do YouTube...')
-  const info = await fetchInfo(youtubeId)
+  const info = await fetchInfo(youtubeId, userId)
   const localPath = await downloadAudio(youtubeId, musicCache.dirPath())
   const driveFile = `${youtubeId}.mp3`
 
@@ -102,7 +106,7 @@ export async function resolveTrack(
 
   let downloadPromise = pendingDownloads.get(youtubeId)
   if (!downloadPromise) {
-    downloadPromise = downloadAndStore(youtubeId, onProgress).finally(() => {
+    downloadPromise = downloadAndStore(youtubeId, userId, onProgress).finally(() => {
       pendingDownloads.delete(youtubeId)
     })
     pendingDownloads.set(youtubeId, downloadPromise)
