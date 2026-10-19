@@ -9,3 +9,4 @@ dist/
 apps/*/conhecimento/*.md
 !apps/*/conhecimento/*.example.md
 apps/*/ytmusic/
+apps/*/sync-playlists.log
