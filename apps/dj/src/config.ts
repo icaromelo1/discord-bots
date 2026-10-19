@@ -29,6 +29,20 @@ export const config = {
   },
 }
 
+// Lido só pelo sync de playlists, não pelo bot: um DJ sem esse cookie sobe normal.
+export function buildSyncConfig() {
+  return {
+    // Cookie da conta pessoal, usado SÓ para listar as playlists. Os downloads
+    // seguem pelo COOKIES_FILE da conta dedicada: baixar centenas de faixas por
+    // dia é o que chama a atenção do anti-bot, e esse risco não vai para a conta
+    // pessoal.
+    cookiesFile: required('YTMUSIC_COOKIES_FILE'),
+    maxPorExecucao: int('SYNC_MAX_POR_EXECUCAO', 60),
+    ignorar: list('SYNC_IGNORAR_PLAYLISTS'),
+    cooldownMs: int('DOWNLOAD_COOLDOWN_MS', 5_000),
+  }
+}
+
 export function buildSharedConfig(): SharedConfig {
   return {
     discord: {

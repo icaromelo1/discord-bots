@@ -208,18 +208,48 @@ export interface PlaylistInfo {
   entradas: { youtubeId: string; title: string; durationSec: number }[]
 }
 
-export async function listPlaylist(url: string, userId?: string): Promise<PlaylistInfo> {
-  const args = ['-J', '--flat-playlist', '--no-warnings', ...cookieArgs(), ...potArgs(), url]
+// Cookie de outra conta, passado direto e não pela cópia descartável de cookieArgs:
+// esse arquivo é só deste uso, e deixar o yt-dlp gravar nele os cookies rotacionados
+// é o que mantém a sessão viva entre execuções.
+function contaArgs(cookiesFile: string | undefined): string[] {
+  return cookiesFile ? ['--cookies', cookiesFile] : cookieArgs()
+}
 
-  let stdout: string
+async function lerJson(args: string[]): Promise<string> {
   try {
     const result = await execFile('yt-dlp', args, EXEC_OPTIONS)
-    stdout = result.stdout
+    return result.stdout
   } catch (error) {
     const stderr =
       error instanceof Error && 'stderr' in error ? String((error as { stderr: unknown }).stderr) : String(error)
     throw translateError(stderr)
   }
+}
+
+export interface AccountPlaylist {
+  id: string
+  titulo: string
+}
+
+/** Playlists da biblioteca da conta dona do arquivo de cookies (criadas e salvas). */
+export async function listAccountPlaylists(cookiesFile: string): Promise<AccountPlaylist[]> {
+  const stdout = await lerJson([
+    '-J',
+    '--flat-playlist',
+    '--no-warnings',
+    ...contaArgs(cookiesFile),
+    ...potArgs(),
+    'https://www.youtube.com/feed/playlists',
+  ])
+
+  const data = JSON.parse(stdout) as { entries?: { id?: string; title?: string }[] }
+  return (data.entries ?? [])
+    .filter((entry) => entry.id)
+    .map((entry) => ({ id: entry.id as string, titulo: entry.title ?? (entry.id as string) }))
+}
+
+export async function listPlaylist(url: string, userId?: string, cookiesFile?: string): Promise<PlaylistInfo> {
+  const stdout = await lerJson(['-J', '--flat-playlist', '--no-warnings', ...contaArgs(cookiesFile), ...potArgs(), url])
 
   const data = JSON.parse(stdout) as {
     title?: string

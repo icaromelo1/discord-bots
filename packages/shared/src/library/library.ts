@@ -87,6 +87,17 @@ async function downloadAndStore(
   return trackRepo.findOneOrFail({ where: { youtubeId } })
 }
 
+function downloadOnce(youtubeId: string, userId?: string, onProgress?: (label: string) => void): Promise<Track> {
+  let downloadPromise = pendingDownloads.get(youtubeId)
+  if (!downloadPromise) {
+    downloadPromise = downloadAndStore(youtubeId, userId, onProgress).finally(() => {
+      pendingDownloads.delete(youtubeId)
+    })
+    pendingDownloads.set(youtubeId, downloadPromise)
+  }
+  return downloadPromise
+}
+
 export async function resolveTrack(
   guildId: string,
   youtubeId: string,
@@ -104,17 +115,23 @@ export async function resolveTrack(
     return toResolved(existing)
   }
 
-  let downloadPromise = pendingDownloads.get(youtubeId)
-  if (!downloadPromise) {
-    downloadPromise = downloadAndStore(youtubeId, userId, onProgress).finally(() => {
-      pendingDownloads.delete(youtubeId)
-    })
-    pendingDownloads.set(youtubeId, downloadPromise)
-  }
-
-  const track = await downloadPromise
+  const track = await downloadOnce(youtubeId, userId, onProgress)
   await upsertGuildTrack(guildId, track.id, userId, userName)
   return toResolved(track)
+}
+
+/**
+ * Garante a faixa na biblioteca (banco + Drive) sem vinculá-la a nenhuma guild —
+ * para quem abastece o acervo fora de uma call, como o sync de playlists.
+ * `nova` diz se o download aconteceu agora: só nesse caso a cópia local foi criada
+ * por esta chamada.
+ */
+export async function storeTrack(youtubeId: string): Promise<{ track: ResolvedTrack; nova: boolean }> {
+  const existing = await getDataSource().getRepository(Track).findOne({ where: { youtubeId } })
+  if (existing) return { track: toResolved(existing), nova: false }
+
+  const track = await downloadOnce(youtubeId)
+  return { track: toResolved(track), nova: true }
 }
 
 export async function isKnown(youtubeId: string): Promise<boolean> {

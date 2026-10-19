@@ -17,6 +17,10 @@ services:
       # DIRETÓRIO, nunca o arquivo: bind-mount de arquivo único quebra quando o cron
       # de cookies reescreve e troca o inode
       - /home/ubuntu/projects/kairos-api/cookies:/app/cookies:ro
+      # cookie da conta pessoal, só para o sync listar as playlists. rw e diretório
+      # pelo mesmo motivo do rclone: o yt-dlp regrava os cookies rotacionados, e é
+      # isso que mantém a sessão viva entre uma rodada e outra
+      - ./apps/dj/ytmusic:/app/ytmusic
     networks:
       - data
 

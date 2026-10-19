@@ -18,14 +18,17 @@ export {
   translateError,
   searchYoutube,
   listPlaylist,
+  listAccountPlaylists,
   fetchInfo,
   downloadAudio,
   type YtDlpInfo,
   type SearchResult,
   type PlaylistInfo,
+  type AccountPlaylist,
 } from './library/ytdlp'
 export {
   resolveTrack,
+  storeTrack,
   isKnown,
   listLibrary,
   ensureLocalFile,
